@@ -19,7 +19,7 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/point_cloud2_iterator.h>
 #include <simple_zed2_wrapper/ObjectsStamped.h>
-
+#include <tf/transform_broadcaster.h>
 #include <sl/Camera.hpp>
 #include "utils.hpp"
 #include <opencv2/opencv.hpp>
@@ -31,11 +31,18 @@ bool is_playback = false;
 void print(string msg_prefix, ERROR_CODE err_code = ERROR_CODE::SUCCESS, string msg_suffix = "");
 void parseArgs(int argc, char **argv, InitParameters& param);
 void swapRedBlueChannels(sensor_msgs::PointCloud2& cloud);
+void setRegularObjectsMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Objects &objects);
+void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &skeletons);
 
 bool publish_rgb = true, publish_depth = false, publish_point_cloud = true;
 
 bool use_object_detection = true, use_body_tracking = true;
 
+
+/// @brief  Main function. We have a loop that retrieves the camera pose, RGB image, depth image, point cloud, and object detection results and publishes them to ROS topics.
+/// @param argc See parseArgs function
+/// @param argv See parseArgs function
+/// @return 
 int main(int argc, char **argv) {
 
     ros::init(argc, argv, "zed2_node");
@@ -116,7 +123,8 @@ int main(int argc, char **argv) {
     // Detection runtime parameters
     int detection_confidence_od = 20;
     ObjectDetectionRuntimeParameters detection_parameters_rt(detection_confidence_od);
-    // To select a set of specific object classes:
+
+    // To select a set of specific object classes. Exclude person, which will be tracked by the body tracking module
     detection_parameters_rt.object_class_filter = { OBJECT_CLASS::ELECTRONICS, OBJECT_CLASS::SPORT,
         OBJECT_CLASS::ANIMAL, OBJECT_CLASS::BAG, OBJECT_CLASS::VEHICLE, OBJECT_CLASS::FRUIT_VEGETABLE };
 
@@ -142,7 +150,7 @@ int main(int argc, char **argv) {
 
     std::cout << "ZED2 node started" << std::endl;    
 
-    bool gl_viewer_available = true;
+    // Main loop
     while ( ros::ok()) {
 
         auto grab_state = zed.grab(runtime_parameters);
@@ -166,106 +174,46 @@ int main(int argc, char **argv) {
             pose_msg.pose.orientation.w = cam_w_pose.pose_data.getOrientation().w;
             pose_pub.publish(pose_msg);
 
-            /// TODO: Publish TF for camera pose
+            // Publish TF for camera pose. Base frame is the world frame
+            static tf::TransformBroadcaster br;
+            tf::Transform transform;
+            transform.setOrigin(tf::Vector3(cam_w_pose.pose_data.getTranslation().x, cam_w_pose.pose_data.getTranslation().y, cam_w_pose.pose_data.getTranslation().z));
+            transform.setRotation(tf::Quaternion(cam_w_pose.pose_data.getOrientation().x, cam_w_pose.pose_data.getOrientation().y, cam_w_pose.pose_data.getOrientation().z, cam_w_pose.pose_data.getOrientation().w));
+            br.sendTransform(tf::StampedTransform(transform, time, "world", "zed2"));
 
-            // Publish Objects if detection is enabled
+
+            /********  Publish Objects if detection is enabled  ******/ 
+            simple_zed2_wrapper::ObjectsStamped objects_msg;
+
             if(use_object_detection){
-                simple_zed2_wrapper::ObjectsStamped objects_msg;
 
                 detection_parameters_rt.detection_confidence_threshold = detection_confidence_od;
                 zed.retrieveObjects(objects, detection_parameters_rt, object_detection_parameters.instance_module_id);
 
-                if(use_body_tracking)
-                {
-                    body_tracking_parameters_rt.detection_confidence_threshold = body_detection_confidence;
-                    zed.retrieveBodies(skeletons, body_tracking_parameters_rt, body_tracking_parameters.instance_module_id);
-                }
-
-                for (int i = 0; i < objects.object_list.size(); i++) {
-                    simple_zed2_wrapper::Object obj;
-                    obj.label = toString(objects.object_list[i].label);
-                    obj.label_id = objects.object_list[i].id;
-                    obj.confidence = objects.object_list[i].confidence;
-
-                    obj.position[0] = objects.object_list[i].position.x;
-                    obj.position[1] = objects.object_list[i].position.y;
-                    obj.position[2] = objects.object_list[i].position.z;
-                    obj.position_covariance[0] = objects.object_list[i].position_covariance[0];
-                    obj.position_covariance[1] = objects.object_list[i].position_covariance[1];
-                    obj.position_covariance[2] = objects.object_list[i].position_covariance[2];
-                    obj.position_covariance[3] = objects.object_list[i].position_covariance[3];
-                    obj.position_covariance[4] = objects.object_list[i].position_covariance[4];
-                    obj.position_covariance[5] = objects.object_list[i].position_covariance[5];
-                    obj.position_covariance[6] = objects.object_list[i].position_covariance[6];
-
-                    obj.velocity[0] = objects.object_list[i].velocity.x;
-                    obj.velocity[1] = objects.object_list[i].velocity.y;
-                    obj.velocity[2] = objects.object_list[i].velocity.z;
-
-                    switch (objects.object_list[i].tracking_state)
-                    {
-                    case OBJECT_TRACKING_STATE::OK:
-                        obj.tracking_state = 1;
-                        break;
-                    case OBJECT_TRACKING_STATE::OFF:
-                        obj.tracking_state = 0;
-                        break;
-                    case OBJECT_TRACKING_STATE::SEARCHING:
-                        obj.tracking_state = 2;
-                        break;
-                    default:
-                        obj.tracking_state = -1;
-                        break;
-                    }
-                    
-                    switch (objects.object_list[i].action_state)
-                    {
-                    case OBJECT_ACTION_STATE::IDLE:
-                        obj.action_state = 0;
-                        break;
-                    case OBJECT_ACTION_STATE::MOVING:
-                        obj.action_state = 2;
-                        break;
-                    default:
-                        break;
-                    }
-
-                    obj.dimensions_3d[0] = objects.object_list[i].dimensions.x;
-                    obj.dimensions_3d[1] = objects.object_list[i].dimensions.y;
-                    obj.dimensions_3d[2] = objects.object_list[i].dimensions.z;
-
-                    // If use body tracking, add skeleton data
-                    if(use_body_tracking)
-                    {
-                        obj.skeleton_available = true;
-                        switch (body_tracking_parameters.body_format)
-                        {
-                        case BODY_FORMAT::BODY_18:
-                            obj.body_format = 0;
-                            break;
-                        case BODY_FORMAT::BODY_34:
-                            obj.body_format = 1;
-                            break;
-                        case BODY_FORMAT::BODY_38:
-                            obj.body_format = 2;
-                            break;
-                        default:
-                            break;
-                        }
-
-                        /// TODO: Publish skeleton data and added visualization in rviz
-                    }
-
-                    objects_msg.objects.push_back(obj);
-                }
-
-                objects_msg.header.stamp = time;
-                objects_msg.header.frame_id = frame_id;
-                objects_pub.publish(objects_msg);
-
+                setRegularObjectsMsg(objects_msg, objects);
             }
 
 
+            /********  Publish Bodies if body tracking is enabled  ******/
+            if(use_body_tracking)
+            {
+                body_tracking_parameters_rt.detection_confidence_threshold = body_detection_confidence;
+                zed.retrieveBodies(skeletons, body_tracking_parameters_rt, body_tracking_parameters.instance_module_id);
+
+                setHumanBodyMsg(objects_msg, skeletons);
+            }
+
+            
+            // Publish Objects
+            if(use_object_detection || use_body_tracking)    
+            {
+                objects_msg.header.stamp = time;
+                objects_msg.header.frame_id = frame_id;
+                objects_pub.publish(objects_msg);
+            }        
+
+
+            /********  Publish images  ********/
             if(publish_rgb){
                 // Retrieve rgb image and publish
                 zed.retrieveImage(image_left, VIEW::LEFT);
@@ -352,6 +300,12 @@ int main(int argc, char **argv) {
     return EXIT_SUCCESS;
 }
 
+
+
+/// @brief This function prints the message to the console with the error code and message
+/// @param msg_prefix 
+/// @param err_code 
+/// @param msg_suffix 
 void print(string msg_prefix, ERROR_CODE err_code, string msg_suffix) {
     cout << "[Sample] ";
     if (err_code != ERROR_CODE::SUCCESS)
@@ -366,6 +320,10 @@ void print(string msg_prefix, ERROR_CODE err_code, string msg_suffix) {
     cout << endl;
 }
 
+/// @brief This function parses the command line arguments and sets the camera resolution and input mode
+/// @param argc 
+/// @param argv 
+/// @param param 
 void parseArgs(int argc, char **argv, InitParameters& param) {
     if (argc > 1 && string(argv[1]).find(".svo") != string::npos) {
         // SVO input mode
@@ -405,6 +363,196 @@ void parseArgs(int argc, char **argv, InitParameters& param) {
         }
     }
 
+}
+
+
+/// @brief Set the regular objects message using the results from object detection
+/// @param objects_msg 
+/// @param objects 
+void setRegularObjectsMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Objects &objects)
+{
+    // Iterate over the list of detected objects
+    for (int i = 0; i < objects.object_list.size(); i++) {
+        simple_zed2_wrapper::Object obj;
+        obj.label = toString(objects.object_list[i].label);
+        obj.label_id = objects.object_list[i].id;
+        obj.confidence = objects.object_list[i].confidence;
+
+        obj.position[0] = objects.object_list[i].position.x;
+        obj.position[1] = objects.object_list[i].position.y;
+        obj.position[2] = objects.object_list[i].position.z;
+        obj.position_covariance[0] = objects.object_list[i].position_covariance[0];
+        obj.position_covariance[1] = objects.object_list[i].position_covariance[1];
+        obj.position_covariance[2] = objects.object_list[i].position_covariance[2];
+        obj.position_covariance[3] = objects.object_list[i].position_covariance[3];
+        obj.position_covariance[4] = objects.object_list[i].position_covariance[4];
+        obj.position_covariance[5] = objects.object_list[i].position_covariance[5];
+        obj.position_covariance[6] = objects.object_list[i].position_covariance[6];
+
+        obj.velocity[0] = objects.object_list[i].velocity.x;
+        obj.velocity[1] = objects.object_list[i].velocity.y;
+        obj.velocity[2] = objects.object_list[i].velocity.z;
+
+        switch (objects.object_list[i].tracking_state)
+        {
+        case OBJECT_TRACKING_STATE::OK:
+            obj.tracking_state = 1;
+            break;
+        case OBJECT_TRACKING_STATE::OFF:
+            obj.tracking_state = 0;
+            break;
+        case OBJECT_TRACKING_STATE::SEARCHING:
+            obj.tracking_state = 2;
+            break;
+        default:
+            obj.tracking_state = -1;
+            break;
+        }
+        
+        switch (objects.object_list[i].action_state)
+        {
+        case OBJECT_ACTION_STATE::IDLE:
+            obj.action_state = 0;
+            break;
+        case OBJECT_ACTION_STATE::MOVING:
+            obj.action_state = 2;
+            break;
+        default:
+            break;
+        }
+
+        // 2D and 3D bounding box
+        vector<sl::uint2> object_2Dbbox = objects.object_list[i].bounding_box_2d;
+        for(int k=0; k<4; ++k)
+        {
+            obj.bounding_box_2d.corners[k].kp[0] = object_2Dbbox[k].x;
+            obj.bounding_box_2d.corners[k].kp[1] = object_2Dbbox[k].y;
+        }
+
+        vector<sl::float3> object_3Dbbox = objects.object_list[i].bounding_box;
+        for(int k=0; k<8; ++k)
+        {
+            obj.bounding_box_3d.corners[k].kp[0] = object_3Dbbox[k].x;
+            obj.bounding_box_3d.corners[k].kp[1] = object_3Dbbox[k].y;
+            obj.bounding_box_3d.corners[k].kp[2] = object_3Dbbox[k].z;
+        }
+
+        // 3D dimensions
+        obj.dimensions_3d[0] = objects.object_list[i].dimensions.x;
+        obj.dimensions_3d[1] = objects.object_list[i].dimensions.y;
+        obj.dimensions_3d[2] = objects.object_list[i].dimensions.z;
+
+        obj.skeleton_available = false;
+
+        objects_msg.objects.push_back(obj);
+    }
+}
+
+
+/// @brief Set the human body message using the results from body tracking
+/// @param objects_msg 
+/// @param skeletons 
+void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &skeletons)
+{
+    // Iterate over the list of detected persons
+    for(auto &body : skeletons.body_list)
+    {
+        simple_zed2_wrapper::Object obj;
+        obj.label = "person";
+        obj.body_format = 0; // BODY_FORMAT::BODY_18
+        obj.label_id = body.id;
+        obj.confidence = body.confidence;
+
+        obj.position[0] = body.position.x;
+        obj.position[1] = body.position.y;
+        obj.position[2] = body.position.z;
+
+        obj.position_covariance[0] = body.position_covariance[0];
+        obj.position_covariance[1] = body.position_covariance[1];
+        obj.position_covariance[2] = body.position_covariance[2];
+        obj.position_covariance[3] = body.position_covariance[3];
+        obj.position_covariance[4] = body.position_covariance[4];
+        obj.position_covariance[5] = body.position_covariance[5];
+
+        obj.velocity[0] = body.velocity.x;
+        obj.velocity[1] = body.velocity.y;
+        obj.velocity[2] = body.velocity.z;
+
+        obj.dimensions_3d[0] = body.dimensions.x;
+        obj.dimensions_3d[1] = body.dimensions.y;
+        obj.dimensions_3d[2] = body.dimensions.z;
+
+        // Tracking state
+        switch (body.tracking_state)
+        {
+        case OBJECT_TRACKING_STATE::OK:
+            obj.tracking_state = 1;
+            break;
+        case OBJECT_TRACKING_STATE::OFF:
+            obj.tracking_state = 0;
+            break;
+        case OBJECT_TRACKING_STATE::SEARCHING:
+            obj.tracking_state = 2;
+            break;
+        default:
+            obj.tracking_state = -1;
+            break;
+        }
+
+        // 2D and 3D bounding box
+        vector<sl::uint2> object_2Dbbox = body.bounding_box_2d;
+        for(int k=0; k<4; ++k)
+        {
+            obj.bounding_box_2d.corners[k].kp[0] = object_2Dbbox[k].x;
+            obj.bounding_box_2d.corners[k].kp[1] = object_2Dbbox[k].y;
+        }
+
+        vector<sl::float3> object_3Dbbox = body.bounding_box;
+        for(int k=0; k<8; ++k)
+        {
+            obj.bounding_box_3d.corners[k].kp[0] = object_3Dbbox[k].x;
+            obj.bounding_box_3d.corners[k].kp[1] = object_3Dbbox[k].y;
+            obj.bounding_box_3d.corners[k].kp[2] = object_3Dbbox[k].z;
+        }
+
+        obj.skeleton_available = true;
+
+        // head_bounding_box_2d and head_bounding_box_3d
+        vector<sl::uint2> head_2Dbbox = body.head_bounding_box_2d;
+        for(int k=0; k<4; ++k)
+        {
+            obj.head_bounding_box_2d.corners[k].kp[0] = head_2Dbbox[k].x;
+            obj.head_bounding_box_2d.corners[k].kp[1] = head_2Dbbox[k].y;
+        }
+
+        vector<sl::float3> head_3Dbbox = body.head_bounding_box;
+        for(int k=0; k<8; ++k)
+        {
+            obj.head_bounding_box_3d.corners[k].kp[0] = head_3Dbbox[k].x;
+            obj.head_bounding_box_3d.corners[k].kp[1] = head_3Dbbox[k].y;
+            obj.head_bounding_box_3d.corners[k].kp[2] = head_3Dbbox[k].z;
+        }
+
+        // Head position
+        obj.head_position[0] = body.head_position.x;
+        obj.head_position[1] = body.head_position.y;
+        obj.head_position[2] = body.head_position.z;
+
+        // skeleton_2d and skeleton_3d
+        for(int j=0; j<body.keypoint.size(); ++j)
+        {
+            obj.skeleton_2d.keypoints[j].kp[0] = body.keypoint_2d[j].x;
+            obj.skeleton_2d.keypoints[j].kp[1] = body.keypoint_2d[j].y;
+
+            obj.skeleton_3d.keypoints[j].kp[0] = body.keypoint[j].x;
+            obj.skeleton_3d.keypoints[j].kp[1] = body.keypoint[j].y;
+            obj.skeleton_3d.keypoints[j].kp[2] = body.keypoint[j].z;
+        }
+
+
+        objects_msg.objects.push_back(obj);
+
+    }
 }
 
 
