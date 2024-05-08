@@ -1,7 +1,7 @@
 # Object label
 string label
 
-# Object label ID
+# Object label ID. NOTE: We use it as TRACK ID!!!!!
 int16 label_id
 
 # Object sub

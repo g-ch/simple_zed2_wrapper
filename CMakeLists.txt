@@ -23,6 +23,7 @@ find_package(catkin REQUIRED COMPONENTS
 	roscpp
 	rospy
 	tf
+    tf2_ros
 	geometry_msgs
 	std_msgs
     shape_msgs
@@ -62,6 +63,10 @@ catkin_package(
 	CATKIN_DEPENDS message_runtime
 )
 
+find_package(Eigen3 REQUIRED)
+include_directories(${EIGEN3_INCLUDE_DIR})
+add_definitions(${EIGEN_DEFINITIONS})
+
 include_directories(${catkin_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
@@ -91,7 +96,11 @@ else()
     SET(ZED_LIBS ${ZED_STATIC_LIBRARIES} ${CUDA_CUDA_LIBRARY} ${CUDA_LIBRARY})
 endif()
 
+# add_subdirectory(${PROJECT_SOURCE_DIR}/include/backward-cpp)
+
+
 target_link_libraries(zed2_node
+                        # PUBLIC Backward::Interface 
                         ${ZED_LIBS}
                         ${OPENGL_LIBRARIES}
                         ${GLUT_LIBRARIES}

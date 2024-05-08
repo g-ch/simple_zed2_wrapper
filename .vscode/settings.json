@@ -11,6 +11,7 @@
         "ostream": "cpp",
         "*.ipp": "cpp",
         "*.tcc": "cpp",
-        "fstream": "cpp"
+        "fstream": "cpp",
+        "vector": "cpp"
     }
 }

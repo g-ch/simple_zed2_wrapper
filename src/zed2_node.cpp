@@ -19,10 +19,19 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/point_cloud2_iterator.h>
 #include <simple_zed2_wrapper/ObjectsStamped.h>
-#include <tf/transform_broadcaster.h>
+#include <tf2_ros/transform_broadcaster.h>
 #include <sl/Camera.hpp>
 #include "utils.hpp"
 #include <opencv2/opencv.hpp>
+#include <tf2_ros/buffer.h>
+#include <tf2_sensor_msgs/tf2_sensor_msgs.h>
+
+
+// #define BACKWARD_HAS_DW 1
+// #include "backward.hpp"
+// namespace backward{
+//     backward::SignalHandling sh;
+// }
 
 // Using std and sl namespaces
 using namespace std;
@@ -34,7 +43,7 @@ void swapRedBlueChannels(sensor_msgs::PointCloud2& cloud);
 void setRegularObjectsMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Objects &objects);
 void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &skeletons);
 
-bool publish_rgb = true, publish_depth = false, publish_point_cloud = true;
+bool publish_rgb = true, publish_depth = false, publish_point_cloud = true, publish_point_cloud_global = true;
 
 bool use_object_detection = true, use_body_tracking = true;
 
@@ -52,7 +61,8 @@ int main(int argc, char **argv) {
     ros::Publisher pose_pub = nh.advertise<geometry_msgs::PoseStamped>("zed2/pose_stamped", 1);
     ros::Publisher img_pub = nh.advertise<sensor_msgs::Image>("zed2/left/rgb/image", 1);
     ros::Publisher depth_mat_pub = nh.advertise<sensor_msgs::Image>("zed2/left/depth/image", 1);
-    ros::Publisher point_cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("zed2/rgb/point_cloud", 1);
+    ros::Publisher point_cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("zed2/left/rgb/point_cloud", 1);
+    ros::Publisher point_cloud_global_pub = nh.advertise<sensor_msgs::PointCloud2>("zed2/left/rgb/point_cloud_global", 1);
     ros::Publisher objects_pub = nh.advertise<simple_zed2_wrapper::ObjectsStamped>("zed2/objects", 1);
 
 #ifdef _SL_JETSON_
@@ -138,6 +148,7 @@ int main(int argc, char **argv) {
 
     RuntimeParameters runtime_parameters;
     runtime_parameters.confidence_threshold = 50;
+    runtime_parameters.measure3D_reference_frame = REFERENCE_FRAME::WORLD; // Camera or World frame
 
     /// TODO: Make body_detection_confidence and confidence_threshold ROS parameters
 
@@ -174,13 +185,20 @@ int main(int argc, char **argv) {
             pose_msg.pose.orientation.w = cam_w_pose.pose_data.getOrientation().w;
             pose_pub.publish(pose_msg);
 
-            // Publish TF for camera pose. Base frame is the world frame
-            static tf::TransformBroadcaster br;
-            tf::Transform transform;
-            transform.setOrigin(tf::Vector3(cam_w_pose.pose_data.getTranslation().x, cam_w_pose.pose_data.getTranslation().y, cam_w_pose.pose_data.getTranslation().z));
-            transform.setRotation(tf::Quaternion(cam_w_pose.pose_data.getOrientation().x, cam_w_pose.pose_data.getOrientation().y, cam_w_pose.pose_data.getOrientation().z, cam_w_pose.pose_data.getOrientation().w));
-            br.sendTransform(tf::StampedTransform(transform, time, "world", "zed2"));
-
+            // Publish TF2 for camera pose. Base frame is the world frame
+            static tf2_ros::TransformBroadcaster br;
+            geometry_msgs::TransformStamped transformStamped;
+            transformStamped.header.stamp = time;
+            transformStamped.header.frame_id = "world";
+            transformStamped.child_frame_id = "zed2";
+            transformStamped.transform.translation.x = cam_w_pose.pose_data.getTranslation().x;
+            transformStamped.transform.translation.y = cam_w_pose.pose_data.getTranslation().y;
+            transformStamped.transform.translation.z = cam_w_pose.pose_data.getTranslation().z;
+            transformStamped.transform.rotation.x = cam_w_pose.pose_data.getOrientation().x;
+            transformStamped.transform.rotation.y = cam_w_pose.pose_data.getOrientation().y;
+            transformStamped.transform.rotation.z = cam_w_pose.pose_data.getOrientation().z;
+            transformStamped.transform.rotation.w = cam_w_pose.pose_data.getOrientation().w;
+            br.sendTransform(transformStamped);    
 
             /********  Publish Objects if detection is enabled  ******/ 
             simple_zed2_wrapper::ObjectsStamped objects_msg;
@@ -188,21 +206,35 @@ int main(int argc, char **argv) {
             if(use_object_detection){
 
                 detection_parameters_rt.detection_confidence_threshold = detection_confidence_od;
-                zed.retrieveObjects(objects, detection_parameters_rt, object_detection_parameters.instance_module_id);
+                // detection_parameters_rt.measure3D_reference_frame = REFERENCE_FRAME::CAMERA;
+                returned_state = zed.retrieveObjects(objects, detection_parameters_rt, object_detection_parameters.instance_module_id);
 
-                setRegularObjectsMsg(objects_msg, objects);
+                if(returned_state == ERROR_CODE::SUCCESS){
+                    // std::cout << "Objects detected: " << objects.object_list.size() << std::endl;
+                    try{
+                        setRegularObjectsMsg(objects_msg, objects);
+                    }catch(const std::exception& e){
+                        std::cerr << e.what() << '\n';
+                    }
+                }
             }
-
 
             /********  Publish Bodies if body tracking is enabled  ******/
             if(use_body_tracking)
             {
                 body_tracking_parameters_rt.detection_confidence_threshold = body_detection_confidence;
-                zed.retrieveBodies(skeletons, body_tracking_parameters_rt, body_tracking_parameters.instance_module_id);
+                // body_tracking_parameters_rt.measure3D_reference_frame = REFERENCE_FRAME::CAMERA;
+                returned_state = zed.retrieveBodies(skeletons, body_tracking_parameters_rt, body_tracking_parameters.instance_module_id);
 
-                setHumanBodyMsg(objects_msg, skeletons);
+                if(returned_state == ERROR_CODE::SUCCESS){
+                    try{
+                        setHumanBodyMsg(objects_msg, skeletons);
+                    }catch(const std::exception& e) {
+                        std::cerr << e.what() << '\n';
+                    }
+                }  
+
             }
-
             
             // Publish Objects
             if(use_object_detection || use_body_tracking)    
@@ -211,7 +243,6 @@ int main(int argc, char **argv) {
                 objects_msg.header.frame_id = frame_id;
                 objects_pub.publish(objects_msg);
             }        
-
 
             /********  Publish images  ********/
             if(publish_rgb){
@@ -259,7 +290,8 @@ int main(int argc, char **argv) {
 
             if(publish_point_cloud){
                 // Retrieve point cloud and publish
-                zed.retrieveMeasure(point_cloud, MEASURE::XYZRGBA);
+                zed.retrieveMeasure(point_cloud, MEASURE::XYZBGRA);
+
                 sensor_msgs::PointCloud2 point_cloud_msg;
                 point_cloud_msg.header.stamp = time;
                 point_cloud_msg.header.frame_id = frame_id;
@@ -286,7 +318,27 @@ int main(int argc, char **argv) {
                 memcpy(&point_cloud_msg.data[0], point_cloud.getPtr<sl::float4>(), point_cloud_msg.data.size());
 
                 point_cloud_pub.publish(point_cloud_msg);
+
+                // Publish global point cloud
+                if(publish_point_cloud_global)
+                {
+                    try {
+                        // Look up for the transformation from camera frame ("zed2") to world frame. Orientation is identity as it has been set in the camera pose
+                        sensor_msgs::PointCloud2 transformed_cloud;
+                        transformStamped.transform.rotation.x = 0;
+                        transformStamped.transform.rotation.y = 0;
+                        transformStamped.transform.rotation.z = 0;
+                        transformStamped.transform.rotation.w = 1;
+                        tf2::doTransform(point_cloud_msg, transformed_cloud, transformStamped);
+                        point_cloud_global_pub.publish(transformed_cloud);
+                    } catch (tf2::TransformException &ex) {
+                        ROS_WARN("%s", ex.what());
+                        ros::Duration(0.001).sleep();
+                    }
+                }
             }
+
+            
 
             if (is_playback && zed.getSVOPosition() == zed.getSVONumberOfFrames()){quit = true;}
         }        
@@ -371,11 +423,16 @@ void parseArgs(int argc, char **argv, InitParameters& param) {
 /// @param objects 
 void setRegularObjectsMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Objects &objects)
 {
+    if (&objects == nullptr) {
+        ROS_ERROR("Received a null reference to sl::Objects.");
+        return;
+    }
+
     // Iterate over the list of detected objects
     for (int i = 0; i < objects.object_list.size(); i++) {
         simple_zed2_wrapper::Object obj;
         obj.label = toString(objects.object_list[i].label);
-        obj.label_id = objects.object_list[i].id;
+        obj.label_id = objects.object_list[i].id; // We use the object ID as the label ID. This is useful for tracking the same object across frames
         obj.confidence = objects.object_list[i].confidence;
 
         obj.position[0] = objects.object_list[i].position.x;
@@ -422,25 +479,29 @@ void setRegularObjectsMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Obje
         }
 
         // 2D and 3D bounding box
-        vector<sl::uint2> object_2Dbbox = objects.object_list[i].bounding_box_2d;
-        for(int k=0; k<4; ++k)
+        if(!objects.object_list[i].bounding_box_2d.empty() && !objects.object_list[i].bounding_box.empty())
         {
-            obj.bounding_box_2d.corners[k].kp[0] = object_2Dbbox[k].x;
-            obj.bounding_box_2d.corners[k].kp[1] = object_2Dbbox[k].y;
-        }
+            vector<sl::uint2> object_2Dbbox = objects.object_list[i].bounding_box_2d;
+            for(int k=0; k<4; ++k)
+            {
+                obj.bounding_box_2d.corners[k].kp[0] = object_2Dbbox[k].x;
+                obj.bounding_box_2d.corners[k].kp[1] = object_2Dbbox[k].y;
+            }
 
-        vector<sl::float3> object_3Dbbox = objects.object_list[i].bounding_box;
-        for(int k=0; k<8; ++k)
-        {
-            obj.bounding_box_3d.corners[k].kp[0] = object_3Dbbox[k].x;
-            obj.bounding_box_3d.corners[k].kp[1] = object_3Dbbox[k].y;
-            obj.bounding_box_3d.corners[k].kp[2] = object_3Dbbox[k].z;
-        }
+            vector<sl::float3> object_3Dbbox = objects.object_list[i].bounding_box;
+            for(int k=0; k<8; ++k)
+            {
+                obj.bounding_box_3d.corners[k].kp[0] = object_3Dbbox[k].x;
+                obj.bounding_box_3d.corners[k].kp[1] = object_3Dbbox[k].y;
+                obj.bounding_box_3d.corners[k].kp[2] = object_3Dbbox[k].z;
+            }
 
-        // 3D dimensions
-        obj.dimensions_3d[0] = objects.object_list[i].dimensions.x;
-        obj.dimensions_3d[1] = objects.object_list[i].dimensions.y;
-        obj.dimensions_3d[2] = objects.object_list[i].dimensions.z;
+            // 3D dimensions
+            obj.dimensions_3d[0] = objects.object_list[i].dimensions.x;
+            obj.dimensions_3d[1] = objects.object_list[i].dimensions.y;
+            obj.dimensions_3d[2] = objects.object_list[i].dimensions.z;
+        }
+        
 
         obj.skeleton_available = false;
 
@@ -454,6 +515,11 @@ void setRegularObjectsMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Obje
 /// @param skeletons 
 void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &skeletons)
 {
+    if (&skeletons == nullptr) {
+        ROS_ERROR("Received a null reference to sl::Bodies.");
+        return;
+    }
+
     // Iterate over the list of detected persons
     for(auto &body : skeletons.body_list)
     {
@@ -500,37 +566,43 @@ void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &s
         }
 
         // 2D and 3D bounding box
-        vector<sl::uint2> object_2Dbbox = body.bounding_box_2d;
-        for(int k=0; k<4; ++k)
+        if(!body.bounding_box_2d.empty() && !body.bounding_box.empty())
         {
-            obj.bounding_box_2d.corners[k].kp[0] = object_2Dbbox[k].x;
-            obj.bounding_box_2d.corners[k].kp[1] = object_2Dbbox[k].y;
-        }
+            vector<sl::uint2> object_2Dbbox = body.bounding_box_2d;
+            for(int k=0; k<4; ++k)
+            {
+                obj.bounding_box_2d.corners[k].kp[0] = object_2Dbbox[k].x;
+                obj.bounding_box_2d.corners[k].kp[1] = object_2Dbbox[k].y;
+            }
 
-        vector<sl::float3> object_3Dbbox = body.bounding_box;
-        for(int k=0; k<8; ++k)
-        {
-            obj.bounding_box_3d.corners[k].kp[0] = object_3Dbbox[k].x;
-            obj.bounding_box_3d.corners[k].kp[1] = object_3Dbbox[k].y;
-            obj.bounding_box_3d.corners[k].kp[2] = object_3Dbbox[k].z;
+            vector<sl::float3> object_3Dbbox = body.bounding_box;
+            for(int k=0; k<8; ++k)
+            {
+                obj.bounding_box_3d.corners[k].kp[0] = object_3Dbbox[k].x;
+                obj.bounding_box_3d.corners[k].kp[1] = object_3Dbbox[k].y;
+                obj.bounding_box_3d.corners[k].kp[2] = object_3Dbbox[k].z;
+            }
         }
 
         obj.skeleton_available = true;
 
         // head_bounding_box_2d and head_bounding_box_3d
-        vector<sl::uint2> head_2Dbbox = body.head_bounding_box_2d;
-        for(int k=0; k<4; ++k)
+        if(!body.head_bounding_box_2d.empty() && !body.head_bounding_box.empty())
         {
-            obj.head_bounding_box_2d.corners[k].kp[0] = head_2Dbbox[k].x;
-            obj.head_bounding_box_2d.corners[k].kp[1] = head_2Dbbox[k].y;
-        }
+            vector<sl::uint2> head_2Dbbox = body.head_bounding_box_2d;
+            for(int k=0; k<4; ++k)
+            {
+                obj.head_bounding_box_2d.corners[k].kp[0] = head_2Dbbox[k].x;
+                obj.head_bounding_box_2d.corners[k].kp[1] = head_2Dbbox[k].y;
+            }
 
-        vector<sl::float3> head_3Dbbox = body.head_bounding_box;
-        for(int k=0; k<8; ++k)
-        {
-            obj.head_bounding_box_3d.corners[k].kp[0] = head_3Dbbox[k].x;
-            obj.head_bounding_box_3d.corners[k].kp[1] = head_3Dbbox[k].y;
-            obj.head_bounding_box_3d.corners[k].kp[2] = head_3Dbbox[k].z;
+            vector<sl::float3> head_3Dbbox = body.head_bounding_box;
+            for(int k=0; k<8; ++k)
+            {
+                obj.head_bounding_box_3d.corners[k].kp[0] = head_3Dbbox[k].x;
+                obj.head_bounding_box_3d.corners[k].kp[1] = head_3Dbbox[k].y;
+                obj.head_bounding_box_3d.corners[k].kp[2] = head_3Dbbox[k].z;
+            }
         }
 
         // Head position
@@ -539,17 +611,19 @@ void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &s
         obj.head_position[2] = body.head_position.z;
 
         // skeleton_2d and skeleton_3d
-        for(int j=0; j<body.keypoint.size(); ++j)
+        if(!body.keypoint_2d.empty() && !body.keypoint.empty())
         {
-            obj.skeleton_2d.keypoints[j].kp[0] = body.keypoint_2d[j].x;
-            obj.skeleton_2d.keypoints[j].kp[1] = body.keypoint_2d[j].y;
+            for(int j=0; j<body.keypoint.size(); ++j)
+            {
+                obj.skeleton_2d.keypoints[j].kp[0] = body.keypoint_2d[j].x;
+                obj.skeleton_2d.keypoints[j].kp[1] = body.keypoint_2d[j].y;
 
-            obj.skeleton_3d.keypoints[j].kp[0] = body.keypoint[j].x;
-            obj.skeleton_3d.keypoints[j].kp[1] = body.keypoint[j].y;
-            obj.skeleton_3d.keypoints[j].kp[2] = body.keypoint[j].z;
+                obj.skeleton_3d.keypoints[j].kp[0] = body.keypoint[j].x;
+                obj.skeleton_3d.keypoints[j].kp[1] = body.keypoint[j].y;
+                obj.skeleton_3d.keypoints[j].kp[2] = body.keypoint[j].z;
+            }
         }
-
-
+        
         objects_msg.objects.push_back(obj);
 
     }
