@@ -9,7 +9,7 @@ We use the ros_msg defined in ZED ROS2 wrapper. The msg is included in this wrap
 
 ## Installation
 ### Install ZED SDK
-Follow the instructions in [https://www.stereolabs.com/docs/get-started-with-zed](https://www.stereolabs.com/docs/get-started-with-zed) to install the SDK. Select the right system, e.g., Linux, Jetson. You can try to compile the examples after 
+Follow the instructions in [https://www.stereolabs.com/docs/get-started-with-zed](https://www.stereolabs.com/docs/get-started-with-zed) to install the SDK. Select the right system, e.g., Linux, Jetson. You can try to compile and run one of the examples to verify the installation.
 
 ### Build the Wrapper in a ROS Workspace
 In the source folder of your workspace
