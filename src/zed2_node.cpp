@@ -43,10 +43,6 @@ void swapRedBlueChannels(sensor_msgs::PointCloud2& cloud);
 void setRegularObjectsMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Objects &objects);
 void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &skeletons);
 
-bool publish_rgb = true, publish_depth = false, publish_point_cloud = true, publish_point_cloud_global = true;
-
-bool use_object_detection = true, use_body_tracking = true;
-
 
 /// @brief  Main function. We have a loop that retrieves the camera pose, RGB image, depth image, point cloud, and object detection results and publishes them to ROS topics.
 /// @param argc See parseArgs function
@@ -65,6 +61,30 @@ int main(int argc, char **argv) {
     ros::Publisher point_cloud_global_pub = nh.advertise<sensor_msgs::PointCloud2>("zed2/left/rgb/point_cloud_global", 1);
     ros::Publisher objects_pub = nh.advertise<simple_zed2_wrapper::ObjectsStamped>("zed2/objects", 1);
 
+    // Get ros parameters from the launch file
+    bool enable_object_detection, enable_object_tracking, enable_object_segmentation;
+    bool enable_body_tracking, enable_body_segmentation;
+    int detection_confidence, body_detection_confidence, depth_confidence;
+
+    bool publish_rgb, publish_depth, publish_point_cloud, publish_point_cloud_global;
+
+    ros::NodeHandle nh2("~");
+    nh2.param<bool>("enable_object_detection", enable_object_detection, true);
+    nh2.param<bool>("enable_body_tracking", enable_body_tracking, true);
+    nh2.param<bool>("enable_body_segmentation", enable_body_segmentation, false);
+    nh2.param<bool>("enable_object_tracking", enable_object_tracking, true);
+    nh2.param<bool>("enable_object_segmentation", enable_object_segmentation, false);
+
+    nh2.param<int>("detection_confidence", detection_confidence, 20);
+    nh2.param<int>("body_detection_confidence", body_detection_confidence, 60);
+    nh2.param<int>("depth_confidence", depth_confidence, 50);
+
+    nh2.param<bool>("publish_rgb", publish_rgb, true);
+    nh2.param<bool>("publish_depth", publish_depth, false);
+    nh2.param<bool>("publish_point_cloud", publish_point_cloud, true);
+    nh2.param<bool>("publish_point_cloud_global", publish_point_cloud_global, true);
+
+
 #ifdef _SL_JETSON_
     const bool isJetson = true;
 #else
@@ -74,10 +94,9 @@ int main(int argc, char **argv) {
     // Create ZED objects
     Camera zed;
     InitParameters init_parameters;
-    init_parameters.depth_mode = DEPTH_MODE::ULTRA;
     init_parameters.depth_maximum_distance = 10.0f * 1000.0f;
     init_parameters.coordinate_units = UNIT::METER;
-    init_parameters.coordinate_system = COORDINATE_SYSTEM::RIGHT_HANDED_Y_UP; // OpenGL's coordinate system is right_handed
+    init_parameters.coordinate_system = COORDINATE_SYSTEM::IMAGE; // Check https://www.stereolabs.com/docs/positional-tracking/coordinate-frames for more information
     init_parameters.sdk_verbose = 1;
 
     parseArgs(argc, argv, init_parameters);
@@ -97,13 +116,13 @@ int main(int argc, char **argv) {
 
     // Define the Objects detection module parameters
     BodyTrackingParameters body_tracking_parameters;
-    body_tracking_parameters.enable_tracking = true;
-    body_tracking_parameters.enable_segmentation = false; // designed to give person pixel mask
+    body_tracking_parameters.enable_tracking = enable_body_tracking;
+    body_tracking_parameters.enable_segmentation = enable_body_segmentation; // designed to give person pixel mask
     body_tracking_parameters.detection_model = BODY_TRACKING_MODEL::HUMAN_BODY_MEDIUM; // HUMAN_BODY_MEDIUM, HUMAN_BODY_FAST, HUMAN_BODY_ACCURATE
     body_tracking_parameters.body_format = BODY_FORMAT::BODY_18;  // BODY_18, BODY_34, BODY_38
     body_tracking_parameters.instance_module_id = 0; // select instance ID
 
-    if(use_body_tracking){
+    if(enable_body_tracking){
         print("Body Tracking: Loading Module...");
         returned_state = zed.enableBodyTracking(body_tracking_parameters);
         if (returned_state != ERROR_CODE::SUCCESS) {
@@ -115,12 +134,12 @@ int main(int argc, char **argv) {
 
     //// Object model
     ObjectDetectionParameters object_detection_parameters;
-    object_detection_parameters.enable_tracking = true;
-    object_detection_parameters.enable_segmentation = false; // designed to give person pixel mask
+    object_detection_parameters.enable_tracking = enable_object_tracking;
+    object_detection_parameters.enable_segmentation = enable_object_segmentation;
     object_detection_parameters.detection_model = OBJECT_DETECTION_MODEL::MULTI_CLASS_BOX_MEDIUM;
     object_detection_parameters.instance_module_id = 1; // select instance ID
 
-    if(use_object_detection){
+    if(enable_object_detection){
         print("Object Detection: Loading Module...");
         returned_state = zed.enableObjectDetection(object_detection_parameters);
         if (returned_state != ERROR_CODE::SUCCESS) {
@@ -131,8 +150,7 @@ int main(int argc, char **argv) {
     }
 
     // Detection runtime parameters
-    int detection_confidence_od = 20;
-    ObjectDetectionRuntimeParameters detection_parameters_rt(detection_confidence_od);
+    ObjectDetectionRuntimeParameters detection_parameters_rt(detection_confidence);
 
     // To select a set of specific object classes. Exclude person, which will be tracked by the body tracking module
     detection_parameters_rt.object_class_filter = { OBJECT_CLASS::ELECTRONICS, OBJECT_CLASS::SPORT,
@@ -141,16 +159,14 @@ int main(int argc, char **argv) {
 
     // Detection runtime parameters
     // default detection threshold, apply to all object class
-    int body_detection_confidence = 60;
     BodyTrackingRuntimeParameters body_tracking_parameters_rt(body_detection_confidence);
     // Detection output
     bool quit = false;
 
     RuntimeParameters runtime_parameters;
-    runtime_parameters.confidence_threshold = 50;
+    runtime_parameters.confidence_threshold = depth_confidence;
     runtime_parameters.measure3D_reference_frame = REFERENCE_FRAME::WORLD; // Camera or World frame
 
-    /// TODO: Make body_detection_confidence and confidence_threshold ROS parameters
 
     Pose cam_w_pose;
     cam_w_pose.pose_data.setIdentity();
@@ -203,9 +219,9 @@ int main(int argc, char **argv) {
             /********  Publish Objects if detection is enabled  ******/ 
             simple_zed2_wrapper::ObjectsStamped objects_msg;
 
-            if(use_object_detection){
+            if(enable_object_detection){
 
-                detection_parameters_rt.detection_confidence_threshold = detection_confidence_od;
+                detection_parameters_rt.detection_confidence_threshold = detection_confidence;
                 // detection_parameters_rt.measure3D_reference_frame = REFERENCE_FRAME::CAMERA;
                 returned_state = zed.retrieveObjects(objects, detection_parameters_rt, object_detection_parameters.instance_module_id);
 
@@ -220,7 +236,7 @@ int main(int argc, char **argv) {
             }
 
             /********  Publish Bodies if body tracking is enabled  ******/
-            if(use_body_tracking)
+            if(enable_body_tracking)
             {
                 body_tracking_parameters_rt.detection_confidence_threshold = body_detection_confidence;
                 // body_tracking_parameters_rt.measure3D_reference_frame = REFERENCE_FRAME::CAMERA;
@@ -237,7 +253,7 @@ int main(int argc, char **argv) {
             }
             
             // Publish Objects
-            if(use_object_detection || use_body_tracking)    
+            if(enable_object_detection || enable_body_tracking)    
             {
                 objects_msg.header.stamp = time;
                 objects_msg.header.frame_id = frame_id;
@@ -412,9 +428,47 @@ void parseArgs(int argc, char **argv, InitParameters& param) {
         } else if (arg.find("VGA") != string::npos) {
             param.camera_resolution = RESOLUTION::VGA;
             cout << "[Sample] Using Camera in resolution VGA" << endl;
+        } else {
+            param.camera_resolution = RESOLUTION::HD720;
+            cout << "[Sample] Using Camera in resolution HD720" << endl;
         }
-    }
 
+        if(argc > 2) {
+            arg = string(argv[2]);
+            if(arg.find("FPS30") != string::npos) {
+                param.camera_fps = 30;
+                cout << "[Sample] Using Camera in FPS 30" << endl;
+            } else if(arg.find("FPS60") != string::npos) {
+                param.camera_fps = 60;
+                cout << "[Sample] Using Camera in FPS 60" << endl;
+            } else {
+                param.camera_fps = 30;
+                cout << "[Sample] Using Camera in FPS 30" << endl;
+            }
+        }
+        
+        if(argc >3)
+        {
+            arg = string(argv[3]);
+            if(arg.find("ULTRA") != string::npos) {
+                param.depth_mode = DEPTH_MODE::ULTRA;
+                cout << "[Sample] Using Camera in ULTRA depth mode" << endl;
+            } else if(arg.find("PERFORMANCE") != string::npos) {
+                param.depth_mode = DEPTH_MODE::PERFORMANCE;
+                cout << "[Sample] Using Camera in PERFORMANCE depth mode" << endl;
+            } else if(arg.find("QUALITY") != string::npos) {
+                param.depth_mode = DEPTH_MODE::QUALITY;
+                cout << "[Sample] Using Camera in QUALITY depth mode" << endl;
+            } else if(arg.find("NEURAL") != string::npos) {
+                param.depth_mode = DEPTH_MODE::NEURAL;
+                cout << "[Sample] Using Camera in NEURAL depth mode" << endl;
+            } else {
+                param.depth_mode = DEPTH_MODE::ULTRA;
+                cout << "[Sample] Using Camera in ULTRA depth mode" << endl;
+            }
+        }
+        
+    }
 }
 
 

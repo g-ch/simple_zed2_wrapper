@@ -16,8 +16,8 @@ find_package(CUDA ${ZED_CUDA_VERSION} REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(GLUT REQUIRED)
 find_package(GLEW REQUIRED)
-SET(OpenGL_GL_PREFERENCE GLVND)
-find_package(OpenGL REQUIRED)
+# SET(OpenGL_GL_PREFERENCE GLVND)
+# find_package(OpenGL REQUIRED)
 
 find_package(catkin REQUIRED COMPONENTS
 	roscpp

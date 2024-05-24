@@ -1,6 +1,39 @@
-<<?xml version="1.0"?>
 <launch>
 
-    <!-- TODO: add launch file for zed2 -->
+    <arg name="image_quality" default="HD720"/> <!-- HD720, HD1080, HD1200, HD2K, HD4K -->
+    <arg name="frame_rate" default="60"/> <!-- 30, 60 -->
+    <arg name="depth_mode" default="ULTRA"/> <!-- PERFORMANCE, QUALITY, ULTRA, NEURAL -->
+    
+    <arg name="enable_object_detection" default="true"/>
+    <arg name="enable_object_tracking" default="true"/>
+    <arg name="enable_object_segmentation" default="false"/>
+    <arg name="enable_body_tracking" default="true"/>
+    <arg name="enable_body_segmentation" default="false"/>
+
+    <arg name="detection_confidence" default="20"/> <!-- 0-100 -->
+    <arg name="body_detection_confidence" default="60"/> <!-- 0-100 -->
+    <arg name="depth_confidence" default="50"/> <!-- 0-100 -->
+
+    <arg name="publish_rgb" default="true"/>
+    <arg name="publish_depth" default="false"/>
+    <arg name="publish_point_cloud" default="true"/>
+    <arg name="publish_point_cloud_global" default="true"/>
+
+    <node pkg="simple_zed2_wrapper" type="zed2_node" name="zed2_node" args="-$(arg image_quality) -FPS$(arg frame_rate) -$(arg depth_mode)" output="screen">
+        <param name="~enable_object_detection" type="bool" value="$(arg enable_object_detection)"/>
+        <param name="~enable_body_tracking" type="bool" value="$(arg enable_body_tracking)"/>
+        <param name="~enable_body_segmentation" type="bool" value="$(arg enable_body_segmentation)"/>
+        <param name="~enable_object_tracking" type="bool" value="$(arg enable_object_tracking)"/>
+        <param name="~enable_object_segmentation" type="bool" value="$(arg enable_object_segmentation)"/>
+
+        <param name="~detection_confidence" type="int" value="$(arg detection_confidence)"/>
+        <param name="~body_detection_confidence" type="int" value="$(arg body_detection_confidence)"/>
+        <param name="~depth_confidence" type="int" value="$(arg depth_confidence)"/>
+
+        <param name="~publish_rgb" type="bool" value="$(arg publish_rgb)"/>
+        <param name="~publish_depth" type="bool" value="$(arg publish_depth)"/>
+        <param name="~publish_point_cloud" type="bool" value="$(arg publish_point_cloud)"/>
+        <param name="~publish_point_cloud_global" type="bool" value="$(arg publish_point_cloud_global)"/>
+    </node>
 
 </launch>
