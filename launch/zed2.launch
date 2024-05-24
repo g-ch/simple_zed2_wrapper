@@ -1,7 +1,7 @@
 <launch>
 
     <arg name="image_quality" default="HD720"/> <!-- HD720, HD1080, HD1200, HD2K, HD4K -->
-    <arg name="frame_rate" default="60"/> <!-- 30, 60 -->
+    <arg name="frame_rate" default="30"/> <!-- 30, 60 -->
     <arg name="depth_mode" default="ULTRA"/> <!-- PERFORMANCE, QUALITY, ULTRA, NEURAL -->
     
     <arg name="enable_object_detection" default="true"/>
