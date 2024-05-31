@@ -585,6 +585,10 @@ void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &s
         return;
     }
 
+    tf2::Transform cam_w_transform;
+    tf2::fromMsg(camera_pose.pose, cam_w_transform);
+    tf2::Transform cam_w_transform_inv = cam_w_transform.inverse();
+
     // Iterate over the list of detected persons
     for(auto &body : skeletons.body_list)
     {
@@ -601,9 +605,6 @@ void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &s
             obj.position[2] = body.position.z;
         }else{
             // Transform the position from wolrd frame to camera frame by multiplying the inverse of the camera pose
-            tf2::Transform cam_w_transform;
-            tf2::fromMsg(camera_pose.pose, cam_w_transform);
-            tf2::Transform cam_w_transform_inv = cam_w_transform.inverse();
             tf2::Vector3 pos(body.position.x, body.position.y, body.position.z);
             tf2::Vector3 pos_cam = cam_w_transform_inv * pos;
             obj.position[0] = pos_cam.x();
@@ -658,9 +659,20 @@ void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &s
             vector<sl::float3> object_3Dbbox = body.bounding_box;
             for(int k=0; k<8; ++k)
             {
-                obj.bounding_box_3d.corners[k].kp[0] = object_3Dbbox[k].x;
-                obj.bounding_box_3d.corners[k].kp[1] = object_3Dbbox[k].y;
-                obj.bounding_box_3d.corners[k].kp[2] = object_3Dbbox[k].z;
+                if(!detection_result_in_camera_frame)
+                {
+                    obj.bounding_box_3d.corners[k].kp[0] = object_3Dbbox[k].x;
+                    obj.bounding_box_3d.corners[k].kp[1] = object_3Dbbox[k].y;
+                    obj.bounding_box_3d.corners[k].kp[2] = object_3Dbbox[k].z;
+                }else{
+                    // Transform the position from wolrd frame to camera frame by multiplying the inverse of the camera pose
+                    tf2::Vector3 pos(object_3Dbbox[k].x, object_3Dbbox[k].y, object_3Dbbox[k].z);
+                    tf2::Vector3 pos_cam = cam_w_transform_inv * pos;
+                    obj.bounding_box_3d.corners[k].kp[0] = pos_cam.x();
+                    obj.bounding_box_3d.corners[k].kp[1] = pos_cam.y();
+                    obj.bounding_box_3d.corners[k].kp[2] = pos_cam.z();
+                
+                }
             }
         }
 
@@ -679,9 +691,19 @@ void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &s
             vector<sl::float3> head_3Dbbox = body.head_bounding_box;
             for(int k=0; k<8; ++k)
             {
-                obj.head_bounding_box_3d.corners[k].kp[0] = head_3Dbbox[k].x;
-                obj.head_bounding_box_3d.corners[k].kp[1] = head_3Dbbox[k].y;
-                obj.head_bounding_box_3d.corners[k].kp[2] = head_3Dbbox[k].z;
+                if(!detection_result_in_camera_frame)
+                {
+                    obj.head_bounding_box_3d.corners[k].kp[0] = head_3Dbbox[k].x;
+                    obj.head_bounding_box_3d.corners[k].kp[1] = head_3Dbbox[k].y;
+                    obj.head_bounding_box_3d.corners[k].kp[2] = head_3Dbbox[k].z;
+                }else{
+                    // Transform the position from wolrd frame to camera frame by multiplying the inverse of the camera pose
+                    tf2::Vector3 pos(head_3Dbbox[k].x, head_3Dbbox[k].y, head_3Dbbox[k].z);
+                    tf2::Vector3 pos_cam = cam_w_transform_inv * pos;
+                    obj.head_bounding_box_3d.corners[k].kp[0] = pos_cam.x();
+                    obj.head_bounding_box_3d.corners[k].kp[1] = pos_cam.y();
+                    obj.head_bounding_box_3d.corners[k].kp[2] = pos_cam.z();
+                }
             }
         }
 
@@ -698,9 +720,19 @@ void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &s
                 obj.skeleton_2d.keypoints[j].kp[0] = body.keypoint_2d[j].x;
                 obj.skeleton_2d.keypoints[j].kp[1] = body.keypoint_2d[j].y;
 
-                obj.skeleton_3d.keypoints[j].kp[0] = body.keypoint[j].x;
-                obj.skeleton_3d.keypoints[j].kp[1] = body.keypoint[j].y;
-                obj.skeleton_3d.keypoints[j].kp[2] = body.keypoint[j].z;
+                if(!detection_result_in_camera_frame)
+                {
+                    obj.skeleton_3d.keypoints[j].kp[0] = body.keypoint[j].x;
+                    obj.skeleton_3d.keypoints[j].kp[1] = body.keypoint[j].y;
+                    obj.skeleton_3d.keypoints[j].kp[2] = body.keypoint[j].z;
+                }else{
+                    // Transform the position from wolrd frame to camera frame by multiplying the inverse of the camera pose
+                    tf2::Vector3 pos(body.keypoint[j].x, body.keypoint[j].y, body.keypoint[j].z);
+                    tf2::Vector3 pos_cam = cam_w_transform_inv * pos;
+                    obj.skeleton_3d.keypoints[j].kp[0] = pos_cam.x();
+                    obj.skeleton_3d.keypoints[j].kp[1] = pos_cam.y();
+                    obj.skeleton_3d.keypoints[j].kp[2] = pos_cam.z();
+                }
             }
         }
         
