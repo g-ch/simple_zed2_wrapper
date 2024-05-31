@@ -39,13 +39,12 @@
 using namespace std;
 using namespace sl;
 bool is_playback = false;
-bool detection_result_in_camera_frame = true;
 
 void print(string msg_prefix, ERROR_CODE err_code = ERROR_CODE::SUCCESS, string msg_suffix = "");
 void parseArgs(int argc, char **argv, InitParameters& param);
 void swapRedBlueChannels(sensor_msgs::PointCloud2& cloud);
 void setRegularObjectsMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Objects &objects);
-void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &skeletons, geometry_msgs::PoseStamped &camera_pose);
+void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &skeletons, geometry_msgs::PoseStamped &camera_pose, bool detection_result_in_camera_frame);
 
 
 /// @brief  Main function. We have a loop that retrieves the camera pose, RGB image, depth image, point cloud, and object detection results and publishes them to ROS topics.
@@ -71,6 +70,9 @@ int main(int argc, char **argv) {
 
     int detection_confidence, body_detection_confidence, depth_confidence;
 
+    bool detection_result_in_camera_frame;
+
+
     bool publish_rgb, publish_depth, publish_point_cloud, publish_point_cloud_global;
 
     ros::NodeHandle nh2("~");
@@ -90,6 +92,8 @@ int main(int argc, char **argv) {
     nh2.param<bool>("publish_depth", publish_depth, false);
     nh2.param<bool>("publish_point_cloud", publish_point_cloud, true);
     nh2.param<bool>("publish_point_cloud_global", publish_point_cloud_global, true);
+    
+    std::cout << "detection_result_in_camera_frame: " << detection_result_in_camera_frame << std::endl;
 
 
 #ifdef _SL_JETSON_
@@ -251,7 +255,7 @@ int main(int argc, char **argv) {
 
                 if(returned_state == ERROR_CODE::SUCCESS){
                     try{
-                        setHumanBodyMsg(objects_msg, skeletons, pose_msg);
+                        setHumanBodyMsg(objects_msg, skeletons, pose_msg, detection_result_in_camera_frame);
                     }catch(const std::exception& e) {
                         std::cerr << e.what() << '\n';
                     }
@@ -574,7 +578,7 @@ void setRegularObjectsMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Obje
 /// @brief Set the human body message using the results from body tracking
 /// @param objects_msg 
 /// @param skeletons 
-void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &skeletons, geometry_msgs::PoseStamped &camera_pose)
+void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &skeletons, geometry_msgs::PoseStamped &camera_pose, bool detection_result_in_camera_frame = true)
 {
     if (&skeletons == nullptr) {
         ROS_ERROR("Received a null reference to sl::Bodies.");
