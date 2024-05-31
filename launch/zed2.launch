@@ -10,6 +10,8 @@
     <arg name="enable_body_tracking" default="true"/>
     <arg name="enable_body_segmentation" default="false"/>
 
+    <agr name="detection_result_in_camera_frame" default="true">
+
     <arg name="detection_confidence" default="20"/> <!-- 0-100 -->
     <arg name="body_detection_confidence" default="60"/> <!-- 0-100 -->
     <arg name="depth_confidence" default="50"/> <!-- 0-100 -->
@@ -25,6 +27,8 @@
         <param name="~enable_body_segmentation" type="bool" value="$(arg enable_body_segmentation)"/>
         <param name="~enable_object_tracking" type="bool" value="$(arg enable_object_tracking)"/>
         <param name="~enable_object_segmentation" type="bool" value="$(arg enable_object_segmentation)"/>
+
+        <param name="~detection_result_in_camera_frame" type="bool" value="$(arg detection_result_in_camera_frame)"/>
 
         <param name="~detection_confidence" type="int" value="$(arg detection_confidence)"/>
         <param name="~body_detection_confidence" type="int" value="$(arg body_detection_confidence)"/>

@@ -25,6 +25,8 @@
 #include <opencv2/opencv.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.h>
+#include <tf2/LinearMath/Transform.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
 
 // #define BACKWARD_HAS_DW 1
@@ -37,11 +39,13 @@
 using namespace std;
 using namespace sl;
 bool is_playback = false;
+bool detection_result_in_camera_frame = true;
+
 void print(string msg_prefix, ERROR_CODE err_code = ERROR_CODE::SUCCESS, string msg_suffix = "");
 void parseArgs(int argc, char **argv, InitParameters& param);
 void swapRedBlueChannels(sensor_msgs::PointCloud2& cloud);
 void setRegularObjectsMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Objects &objects);
-void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &skeletons);
+void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &skeletons, geometry_msgs::PoseStamped &camera_pose);
 
 
 /// @brief  Main function. We have a loop that retrieves the camera pose, RGB image, depth image, point cloud, and object detection results and publishes them to ROS topics.
@@ -64,6 +68,7 @@ int main(int argc, char **argv) {
     // Get ros parameters from the launch file
     bool enable_object_detection, enable_object_tracking, enable_object_segmentation;
     bool enable_body_tracking, enable_body_segmentation;
+
     int detection_confidence, body_detection_confidence, depth_confidence;
 
     bool publish_rgb, publish_depth, publish_point_cloud, publish_point_cloud_global;
@@ -74,6 +79,8 @@ int main(int argc, char **argv) {
     nh2.param<bool>("enable_body_segmentation", enable_body_segmentation, false);
     nh2.param<bool>("enable_object_tracking", enable_object_tracking, true);
     nh2.param<bool>("enable_object_segmentation", enable_object_segmentation, false);
+
+    nh2.param<bool>("detection_result_in_camera_frame", detection_result_in_camera_frame, true);
 
     nh2.param<int>("detection_confidence", detection_confidence, 20);
     nh2.param<int>("body_detection_confidence", body_detection_confidence, 60);
@@ -244,7 +251,7 @@ int main(int argc, char **argv) {
 
                 if(returned_state == ERROR_CODE::SUCCESS){
                     try{
-                        setHumanBodyMsg(objects_msg, skeletons);
+                        setHumanBodyMsg(objects_msg, skeletons, pose_msg);
                     }catch(const std::exception& e) {
                         std::cerr << e.what() << '\n';
                     }
@@ -567,7 +574,7 @@ void setRegularObjectsMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Obje
 /// @brief Set the human body message using the results from body tracking
 /// @param objects_msg 
 /// @param skeletons 
-void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &skeletons)
+void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &skeletons, geometry_msgs::PoseStamped &camera_pose)
 {
     if (&skeletons == nullptr) {
         ROS_ERROR("Received a null reference to sl::Bodies.");
@@ -583,9 +590,24 @@ void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &s
         obj.label_id = body.id;
         obj.confidence = body.confidence;
 
-        obj.position[0] = body.position.x;
-        obj.position[1] = body.position.y;
-        obj.position[2] = body.position.z;
+        if(!detection_result_in_camera_frame)
+        {
+            obj.position[0] = body.position.x;
+            obj.position[1] = body.position.y;
+            obj.position[2] = body.position.z;
+        }else{
+            // Transform the position from wolrd frame to camera frame by multiplying the inverse of the camera pose
+            tf2::Transform cam_w_transform;
+            tf2::fromMsg(camera_pose.pose, cam_w_transform);
+            tf2::Transform cam_w_transform_inv = cam_w_transform.inverse();
+            tf2::Vector3 pos(body.position.x, body.position.y, body.position.z);
+            tf2::Vector3 pos_cam = cam_w_transform_inv * pos;
+            obj.position[0] = pos_cam.x();
+            obj.position[1] = pos_cam.y();
+            obj.position[2] = pos_cam.z();
+        }
+
+        
 
         obj.position_covariance[0] = body.position_covariance[0];
         obj.position_covariance[1] = body.position_covariance[1];
