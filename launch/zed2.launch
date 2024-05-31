@@ -10,7 +10,7 @@
     <arg name="enable_body_tracking" default="true"/>
     <arg name="enable_body_segmentation" default="false"/>
 
-    <agr name="detection_result_in_camera_frame" default="true">
+    <arg name="detection_result_in_camera_frame" default="true"/>
 
     <arg name="detection_confidence" default="20"/> <!-- 0-100 -->
     <arg name="body_detection_confidence" default="60"/> <!-- 0-100 -->
