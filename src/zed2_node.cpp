@@ -96,7 +96,7 @@ int main(int argc, char **argv) {
     InitParameters init_parameters;
     init_parameters.depth_maximum_distance = 10.0f * 1000.0f;
     init_parameters.coordinate_units = UNIT::METER;
-    init_parameters.coordinate_system = COORDINATE_SYSTEM::IMAGE; // Check https://www.stereolabs.com/docs/positional-tracking/coordinate-frames for more information
+    init_parameters.coordinate_system = COORDINATE_SYSTEM::RIGHT_HANDED_Y_UP; //COORDINATE_SYSTEM::IMAGE; // Check https://www.stereolabs.com/docs/positional-tracking/coordinate-frames for more information
     init_parameters.sdk_verbose = 1;
 
     parseArgs(argc, argv, init_parameters);
