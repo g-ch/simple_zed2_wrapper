@@ -18,6 +18,7 @@
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/point_cloud2_iterator.h>
+#include <sensor_msgs/CameraInfo.h>
 #include <simple_zed2_wrapper/ObjectsStamped.h>
 #include <tf2_ros/transform_broadcaster.h>
 #include <sl/Camera.hpp>
@@ -59,6 +60,7 @@ int main(int argc, char **argv) {
     ros::NodeHandle nh;
     ros::Publisher pose_pub = nh.advertise<geometry_msgs::PoseStamped>("zed2/pose_stamped", 1);
     ros::Publisher img_pub = nh.advertise<sensor_msgs::Image>("zed2/left/rgb/image", 1);
+    ros::Publisher rgb_camera_info_pub = nh.advertise<sensor_msgs::CameraInfo>("zed2/left/rgb/camera_info", 1);
     ros::Publisher depth_mat_pub = nh.advertise<sensor_msgs::Image>("zed2/left/depth/image", 1);
     ros::Publisher point_cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("zed2/left/rgb/point_cloud", 1);
     ros::Publisher point_cloud_global_pub = nh.advertise<sensor_msgs::PointCloud2>("zed2/left/rgb/point_cloud_global", 1);
@@ -120,6 +122,22 @@ int main(int argc, char **argv) {
     }
 
     auto camera_config = zed.getCameraInformation().camera_configuration;
+
+    CalibrationParameters calibration_params = camera_config.calibration_parameters;
+
+    // Publish camera info
+    sensor_msgs::CameraInfo rgb_camera_info;
+    rgb_camera_info.header.frame_id = "zed2";
+    rgb_camera_info.width = camera_config.resolution.width;
+    rgb_camera_info.height = camera_config.resolution.height;
+    rgb_camera_info.distortion_model = "plumb_bob";
+    rgb_camera_info.D = {calibration_params.left_cam.disto[0], calibration_params.left_cam.disto[1], calibration_params.left_cam.disto[2], calibration_params.left_cam.disto[3], calibration_params.left_cam.disto[4]};
+    rgb_camera_info.K = {calibration_params.left_cam.fx, 0, calibration_params.left_cam.cx, 0, calibration_params.left_cam.fy, calibration_params.left_cam.cy, 0, 0, 1};
+    rgb_camera_info.R = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+    rgb_camera_info.P = {calibration_params.left_cam.fx, 0, calibration_params.left_cam.cx, 0, 0, calibration_params.left_cam.fy, calibration_params.left_cam.cy, 0, 0, 0, 1, 0};
+    rgb_camera_info_pub.publish(rgb_camera_info);
+
+    // Enable positional tracking
     PositionalTrackingParameters positional_tracking_parameters;
     // If the camera is static in space, enabling this settings below provides better depth quality and faster computation
     // positional_tracking_parameters.set_as_static = true;
@@ -294,6 +312,8 @@ int main(int argc, char **argv) {
                 img_msg.data.resize(size);
                 memcpy(&img_msg.data[0], cv_image_left.data, size);
                 img_pub.publish(img_msg); 
+
+                rgb_camera_info_pub.publish(rgb_camera_info);
             }
         
             if(publish_depth){
