@@ -22,6 +22,7 @@ find_package(GLEW REQUIRED)
 find_package(catkin REQUIRED COMPONENTS
 	roscpp
 	rospy
+    rosconsole
 	tf
     tf2
     tf2_ros
@@ -30,6 +31,9 @@ find_package(catkin REQUIRED COMPONENTS
     shape_msgs
 	visualization_msgs
 	message_generation
+    shape_msgs
+	derived_object_msgs
+
 )
 
 
@@ -109,3 +113,8 @@ target_link_libraries(zed2_node
                         ${OpenCV_LIBRARIES}
                         ${catkin_LIBRARIES})
 
+
+
+ADD_EXECUTABLE(global_human_pose src/global_human_pose.cpp)
+target_link_libraries(global_human_pose
+                        ${catkin_LIBRARIES})

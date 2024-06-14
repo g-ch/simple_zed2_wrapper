@@ -13,6 +13,7 @@
         "*.tcc": "cpp",
         "fstream": "cpp",
         "vector": "cpp",
-        "iostream": "cpp"
+        "iostream": "cpp",
+        "dense": "cpp"
     }
 }

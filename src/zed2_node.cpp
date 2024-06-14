@@ -10,7 +10,6 @@
  */
 
 
-// Standard includes
 #include <iostream>
 #include <fstream>
 #include <ros/ros.h>  
