@@ -8,7 +8,7 @@ We use the ros_msg defined in ZED ROS2 wrapper. The msg is included in this wrap
 - Tested environment. Ubuntu 20.04 + ROS Noetic.
 
 ## TODO
-Write a node that transform everything to the global coordinate system in the Vicon field.
+~~Write a node that transform everything to the global coordinate system in the Vicon field.~~
 
 ## Installation
 ### Install ZED SDK
@@ -22,6 +22,9 @@ catkin build
 ```
 
 ## Run
+
+### Get images, point cloud, etc. and 3d human pose in ZED2's VIO coordinate system
+
 ```
 source devel/setup.bash
 roslaunch simple_zed2_wrapper zed2.launch 
@@ -41,7 +44,26 @@ In the launch file, you can change the configurations of the camera. For more de
 
 The topic ```/zed2/objects``` has the type ```simple_zed2_wrapper/ObjectsStamped``` defined in the msg folder. Use this message if you want to subscribe the topic. The definition of joints in the message can be found in the [Additional Info](#additional-info).
 
+
+### Get images, point cloud, etc. and 3d human pose in Vicon's coordinate system
+First of all, make sure you have the right ```result_robot_to_camera_matrix.csv```, which is the calibration result from [robot-camera-calibration](https://github.com/INTERACT-tud-amr/camera_robot_calibration) tool. You should do the calibration once you have changed the position of the camera on the robot or the robot frame in the vicon (e.g., markers layout changed or the center position of the robot frame on the real robot changed). 
+
+Then do
+
+```
+source devel/setup.bash
+roslaunch simple_zed2_wrapper zed2_global_human_pose.launch
+```
+In the launch file, you can change the configurations of the camera. For more details of the parameters and APIs of ZED camera, please refer to [APIs](https://www.stereolabs.com/docs/api). Also, you can find the robot_pose_topic (default="/vision_pose/dingo1). Change it to the pose topic of the robot in ```geometry_msgs/PoseStamped``` form.
+
+A new topic named ```/zed2/global_objects``` and another named ```/zed2/derived_objects``` will be published. The human pose in these two topics are corrected to the vicon global coordinate.
+
+
+### Visualization
 - Visualize the result with [human visualization utils](https://github.com/INTERACT-tud-amr/visualization_utils). 
+
+- You can also visualize the human pose in ```/zed2/derived_objects``` topic with [object visualization utils](https://github.com/INTERACT-tud-amr/visualization_utils/tree/main/objects_visualization).
+
 
 
 ## Additional Info

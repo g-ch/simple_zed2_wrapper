@@ -627,8 +627,8 @@ void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &s
             tf2::Vector3 pos(body.position.x, body.position.y, body.position.z);
             tf2::Vector3 pos_cam = cam_w_transform_inv * pos;
             obj.position[0] = pos_cam.x();
-            obj.position[1] = pos_cam.y();
-            obj.position[2] = pos_cam.z();
+            obj.position[1] = -pos_cam.y(); // Invert the y-axis to match the camera frame
+            obj.position[2] = -pos_cam.z(); // Invert the z-axis to match the camera frame
         }
 
         
@@ -688,8 +688,8 @@ void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &s
                     tf2::Vector3 pos(object_3Dbbox[k].x, object_3Dbbox[k].y, object_3Dbbox[k].z);
                     tf2::Vector3 pos_cam = cam_w_transform_inv * pos;
                     obj.bounding_box_3d.corners[k].kp[0] = pos_cam.x();
-                    obj.bounding_box_3d.corners[k].kp[1] = pos_cam.y();
-                    obj.bounding_box_3d.corners[k].kp[2] = pos_cam.z();
+                    obj.bounding_box_3d.corners[k].kp[1] = -pos_cam.y(); // Invert the y-axis to match the camera frame
+                    obj.bounding_box_3d.corners[k].kp[2] = -pos_cam.z(); // Invert the z-axis to match the camera frame
                 
                 }
             }
@@ -720,8 +720,8 @@ void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &s
                     tf2::Vector3 pos(head_3Dbbox[k].x, head_3Dbbox[k].y, head_3Dbbox[k].z);
                     tf2::Vector3 pos_cam = cam_w_transform_inv * pos;
                     obj.head_bounding_box_3d.corners[k].kp[0] = pos_cam.x();
-                    obj.head_bounding_box_3d.corners[k].kp[1] = pos_cam.y();
-                    obj.head_bounding_box_3d.corners[k].kp[2] = pos_cam.z();
+                    obj.head_bounding_box_3d.corners[k].kp[1] = -pos_cam.y(); // Invert the y-axis to match the camera frame
+                    obj.head_bounding_box_3d.corners[k].kp[2] = -pos_cam.z(); // Invert the z-axis to match the camera frame
                 }
             }
         }
@@ -749,8 +749,8 @@ void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &s
                     tf2::Vector3 pos(body.keypoint[j].x, body.keypoint[j].y, body.keypoint[j].z);
                     tf2::Vector3 pos_cam = cam_w_transform_inv * pos;
                     obj.skeleton_3d.keypoints[j].kp[0] = pos_cam.x();
-                    obj.skeleton_3d.keypoints[j].kp[1] = pos_cam.y();
-                    obj.skeleton_3d.keypoints[j].kp[2] = pos_cam.z();
+                    obj.skeleton_3d.keypoints[j].kp[1] = -pos_cam.y(); // Invert the y-axis to match the camera frame
+                    obj.skeleton_3d.keypoints[j].kp[2] = -pos_cam.z(); // Invert the z-axis to match the camera frame
                 }
             }
         }

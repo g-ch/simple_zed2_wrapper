@@ -23,6 +23,7 @@ find_package(catkin REQUIRED COMPONENTS
 	roscpp
 	rospy
     rosconsole
+    roslib
 	tf
     tf2
     tf2_ros

@@ -10,7 +10,7 @@
     <arg name="enable_body_tracking" default="true"/>
     <arg name="enable_body_segmentation" default="false"/>
 
-    <arg name="detection_result_in_camera_frame" default="false"/>
+    <arg name="detection_result_in_camera_frame" default="true"/>
 
     <arg name="detection_confidence" default="20"/> <!-- 0-100 -->
     <arg name="body_detection_confidence" default="60"/> <!-- 0-100 -->
@@ -20,6 +20,8 @@
     <arg name="publish_depth" default="false"/>
     <arg name="publish_point_cloud" default="true"/>
     <arg name="publish_point_cloud_global" default="true"/>
+
+    <arg name="robot_pose_topic" default="/vision_pose/dingo1"/>
 
     <node pkg="simple_zed2_wrapper" type="zed2_node" name="zed2_node" args="-$(arg image_quality) -FPS$(arg frame_rate) -$(arg depth_mode)" output="screen">
         <param name="~enable_object_detection" type="bool" value="$(arg enable_object_detection)"/>
@@ -38,6 +40,10 @@
         <param name="~publish_depth" type="bool" value="$(arg publish_depth)"/>
         <param name="~publish_point_cloud" type="bool" value="$(arg publish_point_cloud)"/>
         <param name="~publish_point_cloud_global" type="bool" value="$(arg publish_point_cloud_global)"/>
+    </node>
+
+    <node  pkg="simple_zed2_wrapper" type="global_human_pose" name="global_human_pose" output="screen">
+        <remap from="/vision_pose/dingo1" to="$(arg robot_pose_topic)"/>
     </node>
 
 </launch>
