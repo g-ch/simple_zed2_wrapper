@@ -104,7 +104,7 @@ endif()
 
 # add_subdirectory(${PROJECT_SOURCE_DIR}/include/backward-cpp)
 
-
+add_dependencies(zed2_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(zed2_node
                         # PUBLIC Backward::Interface 
                         ${ZED_LIBS}
@@ -117,5 +117,6 @@ target_link_libraries(zed2_node
 
 
 ADD_EXECUTABLE(global_human_pose src/global_human_pose.cpp)
+add_dependencies(global_human_pose ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(global_human_pose
                         ${catkin_LIBRARIES})

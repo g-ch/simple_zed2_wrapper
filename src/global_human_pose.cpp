@@ -185,6 +185,9 @@ void objectsCallback(const simple_zed2_wrapper::ObjectsStamped::ConstPtr& msg)
                         break;
                 }
 
+
+                int id = 100; // Start from 100 for the derived object id for humans.
+
                 // Get the human pose in the world frame
                 for(int j = 0; j < num_joints; j++)
                 {
@@ -194,6 +197,12 @@ void objectsCallback(const simple_zed2_wrapper::ObjectsStamped::ConstPtr& msg)
                     // Transform the joint position to the world frame
                     Eigen::Vector3d global_joint_position = doCamera2GlobalTransform(joint_position);
 
+                    // Check if the joint position in Nan or Inf. If it is, skip this joint
+                    if(std::isnan(global_joint_position[0]) || std::isnan(global_joint_position[1]) || std::isnan(global_joint_position[2]) || std::isinf(global_joint_position[0]) || std::isinf(global_joint_position[1]) || std::isinf(global_joint_position[2]))
+                    {
+                        continue;
+                    }
+
                     // Update the joint position in objects_msg_copy
                     objects_msg_copy.objects[i].skeleton_3d.keypoints[j].kp[0] = global_joint_position[0];
                     objects_msg_copy.objects[i].skeleton_3d.keypoints[j].kp[1] = global_joint_position[1];
@@ -202,7 +211,8 @@ void objectsCallback(const simple_zed2_wrapper::ObjectsStamped::ConstPtr& msg)
                     // Set a sphere for the joint in derived_object_msgs::Object msg
                     derived_object_msgs::Object derived_object_msg;
                     derived_object_msg.header = msg->header;
-                    derived_object_msg.id = j;
+                    derived_object_msg.id = id;
+                    id++;
 
                     derived_object_msg.pose.position.x = global_joint_position[0];
                     derived_object_msg.pose.position.y = global_joint_position[1];
