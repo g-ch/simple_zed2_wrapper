@@ -127,6 +127,8 @@ void objectsCallback(const simple_zed2_wrapper::ObjectsStamped::ConstPtr& msg)
     derived_object_msgs::ObjectArray derived_objects_msg;
 
     // Get the human pose from the ZED camera
+    int id = 100; // Start from 100 for the derived object id for humans.
+
     for(int i = 0; i < msg->objects.size(); i++)
     {
         if(msg->objects[i].label == "person") // We only consider the human pose for now
@@ -184,9 +186,6 @@ void objectsCallback(const simple_zed2_wrapper::ObjectsStamped::ConstPtr& msg)
                         num_joints = 18;
                         break;
                 }
-
-
-                int id = 100; // Start from 100 for the derived object id for humans.
 
                 // Get the human pose in the world frame
                 for(int j = 0; j < num_joints; j++)
