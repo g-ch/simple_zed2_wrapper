@@ -19,6 +19,7 @@
 #include <math.h>
 #include <ros/package.h>
 #include <derived_object_msgs/ObjectArray.h>
+#include <set>
 
 using namespace Eigen;
 
@@ -129,6 +130,8 @@ void objectsCallback(const simple_zed2_wrapper::ObjectsStamped::ConstPtr& msg)
     // Get the human pose from the ZED camera
     int id = 100; // Start from 100 for the derived object id for humans.
 
+    std::set <int> human_ids_to_pub = {4, 7, 9, 11, 12};
+
     for(int i = 0; i < msg->objects.size(); i++)
     {
         if(msg->objects[i].label == "person") // We only consider the human pose for now
@@ -190,6 +193,12 @@ void objectsCallback(const simple_zed2_wrapper::ObjectsStamped::ConstPtr& msg)
                 // Get the human pose in the world frame
                 for(int j = 0; j < num_joints; j++)
                 {
+                    // Check if the joint is in the human_ids_to_pub
+                    if(human_ids_to_pub.find(j) == human_ids_to_pub.end())
+                    {
+                        continue;
+                    }
+
                     Eigen::Vector3d joint_position;
                     joint_position << skeleton_3d.keypoints[j].kp[0], skeleton_3d.keypoints[j].kp[1], skeleton_3d.keypoints[j].kp[2];
 
