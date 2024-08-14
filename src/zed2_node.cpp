@@ -28,12 +28,19 @@
 #include <tf2/LinearMath/Transform.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
+#include <mask_kpts_msgs/MaskGroup.h>
+#include <mask_kpts_msgs/MaskKpts.h>
+#include <mask_kpts_msgs/Keypoint.h>
 
-// #define BACKWARD_HAS_DW 1
-// #include "backward.hpp"
-// namespace backward{
-//     backward::SignalHandling sh;
-// }
+#include <cv_bridge/cv_bridge.h>
+#include <image_transport/image_transport.h>
+
+
+#define BACKWARD_HAS_DW 1
+#include "backward.hpp"
+namespace backward{
+    backward::SignalHandling sh;
+}
 
 // Using std and sl namespaces
 using namespace std;
@@ -45,7 +52,7 @@ void parseArgs(int argc, char **argv, InitParameters& param);
 void swapRedBlueChannels(sensor_msgs::PointCloud2& cloud);
 void setRegularObjectsMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Objects &objects);
 void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &skeletons, geometry_msgs::PoseStamped &camera_pose, bool detection_result_in_camera_frame);
-
+void setMaskKptsMsg(mask_kpts_msgs::MaskGroup &mask_group_msg, Objects &objects, Bodies &skeletons, int image_width, int image_height);
 
 /// @brief  Main function. We have a loop that retrieves the camera pose, RGB image, depth image, point cloud, and object detection results and publishes them to ROS topics.
 /// @param argc See parseArgs function
@@ -65,6 +72,10 @@ int main(int argc, char **argv) {
     ros::Publisher point_cloud_global_pub = nh.advertise<sensor_msgs::PointCloud2>("zed2/left/rgb/point_cloud_global", 1);
     ros::Publisher objects_pub = nh.advertise<simple_zed2_wrapper::ObjectsStamped>("zed2/objects", 1);
 
+    ros::Publisher mask_group_pub = nh.advertise<mask_kpts_msgs::MaskGroup>("/mask_group_super_glued", 1);
+    ros::Publisher depth_repub = nh.advertise<sensor_msgs::Image>("/camera/depth_repub", 1);
+    ros::Publisher pose_repub = nh.advertise<geometry_msgs::PoseStamped>("/camera/pose_repub", 1);
+
     // Get ros parameters from the launch file
     bool enable_object_detection, enable_object_tracking, enable_object_segmentation;
     bool enable_body_tracking, enable_body_segmentation;
@@ -73,8 +84,9 @@ int main(int argc, char **argv) {
 
     bool detection_result_in_camera_frame;
 
+    bool publish_rgb, publish_depth, publish_point_cloud, publish_point_cloud_global, publish_objects;
 
-    bool publish_rgb, publish_depth, publish_point_cloud, publish_point_cloud_global;
+    bool synchoronize_pose_depth_mask;
 
     ros::NodeHandle nh2("~");
     nh2.param<bool>("enable_object_detection", enable_object_detection, true);
@@ -91,8 +103,11 @@ int main(int argc, char **argv) {
 
     nh2.param<bool>("publish_rgb", publish_rgb, true);
     nh2.param<bool>("publish_depth", publish_depth, false);
+    nh2.param<bool>("publish_objects", publish_objects, true);
     nh2.param<bool>("publish_point_cloud", publish_point_cloud, true);
     nh2.param<bool>("publish_point_cloud_global", publish_point_cloud_global, true);
+
+    nh2.param<bool>("synchoronize_pose_depth_mask", synchoronize_pose_depth_mask, true);
     
     std::cout << "detection_result_in_camera_frame: " << detection_result_in_camera_frame << std::endl;
 
@@ -217,6 +232,7 @@ int main(int argc, char **argv) {
             // Publish Camera Pose
             zed.getPosition(cam_w_pose, REFERENCE_FRAME::WORLD);
 
+            
             geometry_msgs::PoseStamped pose_msg;
             pose_msg.header.stamp = time;
             pose_msg.header.frame_id = frame_id;
@@ -227,7 +243,9 @@ int main(int argc, char **argv) {
             pose_msg.pose.orientation.y = cam_w_pose.pose_data.getOrientation().y;
             pose_msg.pose.orientation.z = cam_w_pose.pose_data.getOrientation().z;
             pose_msg.pose.orientation.w = cam_w_pose.pose_data.getOrientation().w;
+
             pose_pub.publish(pose_msg);
+            
 
             // Publish TF2 for camera pose. Base frame is the world frame
             static tf2_ros::TransformBroadcaster br;
@@ -253,7 +271,7 @@ int main(int argc, char **argv) {
                 // detection_parameters_rt.measure3D_reference_frame = REFERENCE_FRAME::CAMERA;
                 returned_state = zed.retrieveObjects(objects, detection_parameters_rt, object_detection_parameters.instance_module_id);
 
-                if(returned_state == ERROR_CODE::SUCCESS){
+                if(returned_state == ERROR_CODE::SUCCESS && publish_objects){
                     // std::cout << "Objects detected: " << objects.object_list.size() << std::endl;
                     try{
                         setRegularObjectsMsg(objects_msg, objects);
@@ -270,7 +288,7 @@ int main(int argc, char **argv) {
                 // body_tracking_parameters_rt.measure3D_reference_frame = REFERENCE_FRAME::CAMERA;
                 returned_state = zed.retrieveBodies(skeletons, body_tracking_parameters_rt, body_tracking_parameters.instance_module_id);
 
-                if(returned_state == ERROR_CODE::SUCCESS){
+                if(returned_state == ERROR_CODE::SUCCESS && publish_objects){
                     try{
                         setHumanBodyMsg(objects_msg, skeletons, pose_msg, detection_result_in_camera_frame);
                     }catch(const std::exception& e) {
@@ -281,7 +299,7 @@ int main(int argc, char **argv) {
             }
             
             // Publish Objects
-            if(enable_object_detection || enable_body_tracking)    
+            if((enable_object_detection || enable_body_tracking) && publish_objects)    
             {
                 objects_msg.header.stamp = time;
                 objects_msg.header.frame_id = frame_id;
@@ -331,7 +349,21 @@ int main(int argc, char **argv) {
                 size_t size = cv_depth_image.cols * cv_depth_image.rows * cv_depth_image.elemSize();
                 depth_img_msg.data.resize(size);
                 memcpy(&depth_img_msg.data[0], cv_depth_image.data, size);
-                depth_mat_pub.publish(depth_img_msg);
+
+                if(synchoronize_pose_depth_mask){
+                    // Get mask group message
+                    mask_kpts_msgs::MaskGroup mask_group_msg;
+                    setMaskKptsMsg(mask_group_msg, objects, skeletons, cv_depth_image.cols, cv_depth_image.rows);
+
+                    mask_group_msg.header.stamp = time;
+                    mask_group_msg.header.frame_id = frame_id;
+
+                    mask_group_pub.publish(mask_group_msg);
+                    depth_repub.publish(depth_img_msg);
+                    pose_repub.publish(pose_msg);
+                }else{
+                    depth_mat_pub.publish(depth_img_msg);
+                }
             }
 
             if(publish_point_cloud){
@@ -594,6 +626,179 @@ void setRegularObjectsMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Obje
 }
 
 
+/// @brief Set the mask and keypoints message using the results from object detection. Keypoints are in global frame and are generated with bbox_3d.
+/// @param mask_group_msg 
+/// @param objects 
+/// @param skeletons 
+void setMaskKptsMsg(mask_kpts_msgs::MaskGroup &mask_group_msg, Objects &objects, Bodies &skeletons, int image_width, int image_height)
+{
+    int num_objects = 0, num_persons = 0;
+
+    if (&objects != nullptr) {
+        for (int i = 0; i < objects.object_list.size(); i++) {
+
+            if(objects.object_list[i].mask.isInit())
+            {
+                num_objects++;
+
+                mask_kpts_msgs::MaskKpts mask_kpts;
+                mask_kpts.label = toString(objects.object_list[i].label);
+                int track_id = objects.object_list[i].id;
+
+                if(track_id >= 20000){track_id = track_id % 20000;} // MAX SUPPORTED TRACK ID
+                mask_kpts.track_id = track_id;
+             
+                // Init a black mask with the same size as the image and then fill the mask with the object mask using the bounding box
+                cv::Mat mask = cv::Mat::zeros(image_height, image_width, CV_8UC1);
+                cv::Mat ori_mask = slMat2cvMat(objects.object_list[i].mask);
+
+                // Get the bounding box
+                vector<sl::uint2> object_2Dbbox = objects.object_list[i].bounding_box_2d;
+
+                // Copy the object mask to the mask
+                for(int y=0; y<ori_mask.rows; ++y)
+                {
+                    for(int x=0; x<ori_mask.cols; ++x)
+                    {
+                        if(y+object_2Dbbox[0].y >= image_height || x+object_2Dbbox[0].x >= image_width){continue;}
+                        mask.at<uchar>(y+object_2Dbbox[0].y, x+object_2Dbbox[0].x) = ori_mask.at<uchar>(y, x);
+                    }
+                }
+
+                // cv::imshow("mask", mask);
+                // cv::waitKey(1);
+
+                // Convert the mask to a ROS message
+                sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "mono8", mask).toImageMsg();
+                mask_kpts.mask = *msg;
+
+                // Get the keypoints. 0, 1, 3, 4 corners of the 3d bounding box. Check https://www.stereolabs.com/docs/object-detection/using-object-detection for details
+                
+                if(!objects.object_list[i].bounding_box.empty() && !objects.object_list[i].bounding_box_2d.empty())
+                {
+                    vector<sl::float3> object_3Dbbox = objects.object_list[i].bounding_box;
+
+                    mask_kpts_msgs::Keypoint kp0, kp1, kp2, kp3;
+                    kp0.x = object_3Dbbox[0].x;
+                    kp0.y = object_3Dbbox[0].y;
+                    kp0.z = object_3Dbbox[0].z;
+
+                    kp1.x = object_3Dbbox[1].x;
+                    kp1.y = object_3Dbbox[1].y;
+                    kp1.z = object_3Dbbox[1].z;
+
+                    kp2.x = object_3Dbbox[3].x;
+                    kp2.y = object_3Dbbox[3].y;
+                    kp2.z = object_3Dbbox[3].z;
+
+                    kp3.x = object_3Dbbox[4].x;
+                    kp3.y = object_3Dbbox[4].y;
+                    kp3.z = object_3Dbbox[4].z;
+
+                    mask_kpts.kpts_curr.push_back(kp0);
+                    mask_kpts.kpts_curr.push_back(kp1);
+                    mask_kpts.kpts_curr.push_back(kp2);
+                    mask_kpts.kpts_curr.push_back(kp3);
+
+                    mask_kpts.kpts_last = mask_kpts.kpts_curr;
+
+                    // 2D bounding box
+                    mask_kpts.bbox_tl.x = object_2Dbbox[0].x;
+                    mask_kpts.bbox_tl.y = object_2Dbbox[0].y;
+                    mask_kpts.bbox_br.x = object_2Dbbox[2].x;
+                    mask_kpts.bbox_br.y = object_2Dbbox[2].y;
+
+                    mask_group_msg.objects.push_back(mask_kpts);
+                }
+            }
+        }
+    }
+
+    if(&skeletons != nullptr)
+    {
+        for(auto &body : skeletons.body_list)
+        {
+            if(body.mask.isInit())
+            {
+                num_persons++;
+
+                mask_kpts_msgs::MaskKpts mask_kpts;
+                mask_kpts.label = "person";
+                
+                int track_id = body.id + 20000;
+                if(track_id > 65535) {track_id = track_id % 40000 + 20000;} // MAX SUPPORTED TRACK ID
+                mask_kpts.track_id = track_id;
+                            
+                // Init a black mask with the same size as the image and then fill the mask with the object mask using the bounding box
+                cv::Mat mask = cv::Mat::zeros(image_height, image_width, CV_8UC1);
+                cv::Mat ori_mask = slMat2cvMat(body.mask);
+
+                // Get the bounding box
+                vector<sl::uint2> object_2Dbbox = body.bounding_box_2d;
+
+                // Copy the object mask to the mask
+                for(int y=0; y<ori_mask.rows; ++y)
+                {
+                    for(int x=0; x<ori_mask.cols; ++x)
+                    {
+                        if(y+object_2Dbbox[0].y >= image_height || x+object_2Dbbox[0].x >= image_width){continue;}
+                        mask.at<uchar>(y+object_2Dbbox[0].y, x+object_2Dbbox[0].x) = ori_mask.at<uchar>(y, x);
+                    }
+                }
+
+                // cv::imshow("mask_human", mask);
+                // cv::waitKey(1);
+
+                // Convert the mask to a ROS message
+                sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "mono8", mask).toImageMsg();
+                mask_kpts.mask = *msg;
+
+                if(!body.bounding_box.empty() && !body.bounding_box_2d.empty())
+                {
+                    // Get the keypoints. 0, 1, 3, 4 corners of the 3d bounding box. Check https://www.stereolabs.com/docs/object-detection/using-object-detection for details
+                    vector<sl::float3> object_3Dbbox = body.bounding_box;
+
+                    mask_kpts_msgs::Keypoint kp0, kp1, kp2, kp3;
+
+                    kp0.x = object_3Dbbox[0].x;
+                    kp0.y = object_3Dbbox[0].y;
+                    kp0.z = object_3Dbbox[0].z;
+
+                    kp1.x = object_3Dbbox[1].x;
+                    kp1.y = object_3Dbbox[1].y;
+                    kp1.z = object_3Dbbox[1].z;
+
+                    kp2.x = object_3Dbbox[3].x;
+                    kp2.y = object_3Dbbox[3].y;
+                    kp2.z = object_3Dbbox[3].z;
+
+                    kp3.x = object_3Dbbox[4].x;
+                    kp3.y = object_3Dbbox[4].y;
+                    kp3.z = object_3Dbbox[4].z;
+
+                    mask_kpts.kpts_curr.push_back(kp0);
+                    mask_kpts.kpts_curr.push_back(kp1);
+                    mask_kpts.kpts_curr.push_back(kp2);
+                    mask_kpts.kpts_curr.push_back(kp3);
+
+                    mask_kpts.kpts_last = mask_kpts.kpts_curr;
+
+                    // 2D bounding box
+                    mask_kpts.bbox_tl.x = object_2Dbbox[0].x;
+                    mask_kpts.bbox_tl.y = object_2Dbbox[0].y;
+                    mask_kpts.bbox_br.x = object_2Dbbox[2].x;
+                    mask_kpts.bbox_br.y = object_2Dbbox[2].y;
+
+                    mask_group_msg.objects.push_back(mask_kpts);
+                }
+            }
+        }
+    }
+
+    std::cout << "Number of objects: " << num_objects << ", Number of persons: " << num_persons << std::endl;
+}
+
+
 /// @brief Set the human body message using the results from body tracking
 /// @param objects_msg 
 /// @param skeletons 
@@ -630,8 +835,6 @@ void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &s
             obj.position[1] = -pos_cam.y(); // Invert the y-axis to match the camera frame
             obj.position[2] = -pos_cam.z(); // Invert the z-axis to match the camera frame
         }
-
-        
 
         obj.position_covariance[0] = body.position_covariance[0];
         obj.position_covariance[1] = body.position_covariance[1];

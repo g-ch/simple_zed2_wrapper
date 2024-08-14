@@ -130,7 +130,10 @@ void objectsCallback(const simple_zed2_wrapper::ObjectsStamped::ConstPtr& msg)
     // Get the human pose from the ZED camera
     int id = 100; // Start from 100 for the derived object id for humans.
 
-    std::set <int> human_ids_to_pub = {4, 7, 9, 11, 12};
+    // std::set <int> human_ids_to_pub = {4, 7, 9, 11, 12};
+
+    // A set containing 0 - 17
+    std::set <int> human_ids_to_pub = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17};
 
     for(int i = 0; i < msg->objects.size(); i++)
     {

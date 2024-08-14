@@ -34,7 +34,9 @@ find_package(catkin REQUIRED COMPONENTS
 	message_generation
     shape_msgs
 	derived_object_msgs
-
+    cv_bridge
+    image_transport
+    mask_kpts_msgs
 )
 
 
@@ -102,11 +104,11 @@ else()
     SET(ZED_LIBS ${ZED_STATIC_LIBRARIES} ${CUDA_CUDA_LIBRARY} ${CUDA_LIBRARY})
 endif()
 
-# add_subdirectory(${PROJECT_SOURCE_DIR}/include/backward-cpp)
+add_subdirectory(${PROJECT_SOURCE_DIR}/include/backward-cpp)
 
 add_dependencies(zed2_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(zed2_node
-                        # PUBLIC Backward::Interface 
+                        PUBLIC Backward::Interface 
                         ${ZED_LIBS}
                         ${OPENGL_LIBRARIES}
                         ${GLUT_LIBRARIES}
