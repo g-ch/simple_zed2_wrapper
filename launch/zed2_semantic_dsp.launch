@@ -2,7 +2,7 @@
 
     <arg name="image_quality" default="HD720"/> <!-- HD720, HD1080, HD1200, HD2K, HD4K -->
     <arg name="frame_rate" default="30"/> <!-- 30, 60 -->
-    <arg name="depth_mode" default="ULTRA"/> <!-- PERFORMANCE, QUALITY, ULTRA, NEURAL -->
+    <arg name="depth_mode" default="NEURAL"/> <!-- PERFORMANCE, QUALITY, ULTRA, NEURAL -->
     
     <arg name="enable_object_detection" default="true"/>
     <arg name="enable_object_tracking" default="true"/>
@@ -19,10 +19,11 @@
     <arg name="publish_rgb" default="true"/>
     <arg name="publish_depth" default="true"/>
     <arg name="publish_objects" default="false"/>
-    <arg name="publish_point_cloud" default="false"/>
-    <arg name="publish_point_cloud_global" default="false"/>
+    <arg name="publish_point_cloud" default="true"/>
+    <arg name="publish_point_cloud_global" default="true"/>
 
     <arg name="synchoronize_pose_depth_mask" default="true"/>
+    <arg name="external_semantic_seg_on" default="true"/>
 
     <node pkg="simple_zed2_wrapper" type="zed2_node" name="zed2_node" args="-$(arg image_quality) -FPS$(arg frame_rate) -$(arg depth_mode)" output="screen">
         <param name="~enable_object_detection" type="bool" value="$(arg enable_object_detection)"/>
@@ -44,6 +45,7 @@
         <param name="~publish_point_cloud_global" type="bool" value="$(arg publish_point_cloud_global)"/>
 
         <param name="~synchoronize_pose_depth_mask" type="bool" value="$(arg synchoronize_pose_depth_mask)"/>
+        <param name="~external_semantic_seg_on" type="bool" value="$(arg external_semantic_seg_on)"/>
     </node>
 
 </launch>

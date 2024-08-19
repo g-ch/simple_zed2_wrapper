@@ -1,7 +1,7 @@
 /**
  * @file zed2_node.cpp
  * @author Clarence (g.chen-5@tudelft.nl)
- * @brief This is a ROS 1 node that interfaces with the ZED2 camera and publishes the camera pose, RGB image, depth image, point cloud, and object detection results.
+ * @brief This is a ROS 1 node that interfaces with the ZED2 camera and publishes the camera pose, RGB image, depth image, point cloud, and object detection results
  * @version 0.1
  * @date 2024-05-01
  * 
@@ -31,6 +31,7 @@
 #include <mask_kpts_msgs/MaskGroup.h>
 #include <mask_kpts_msgs/MaskKpts.h>
 #include <mask_kpts_msgs/Keypoint.h>
+#include <mask_kpts_msgs/ImageWithID.h>
 
 #include <cv_bridge/cv_bridge.h>
 #include <image_transport/image_transport.h>
@@ -54,6 +55,19 @@ void setRegularObjectsMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Obje
 void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &skeletons, geometry_msgs::PoseStamped &camera_pose, bool detection_result_in_camera_frame);
 void setMaskKptsMsg(mask_kpts_msgs::MaskGroup &mask_group_msg, Objects &objects, Bodies &skeletons, int image_width, int image_height);
 
+
+sensor_msgs::Image semantic_seg_image;
+int semantic_seg_image_id = -1;
+
+/// @brief Callback function for the semantic segmentation image. The Segmentation Image should be a mono8 image filled with label ids.
+/// @param msg 
+void semanticSegCallback(const mask_kpts_msgs::ImageWithID& msg)
+{
+    semantic_seg_image = msg.image;
+    semantic_seg_image_id = msg.id;
+}
+
+
 /// @brief  Main function. We have a loop that retrieves the camera pose, RGB image, depth image, point cloud, and object detection results and publishes them to ROS topics.
 /// @param argc See parseArgs function
 /// @param argv See parseArgs function
@@ -72,9 +86,13 @@ int main(int argc, char **argv) {
     ros::Publisher point_cloud_global_pub = nh.advertise<sensor_msgs::PointCloud2>("zed2/left/rgb/point_cloud_global", 1);
     ros::Publisher objects_pub = nh.advertise<simple_zed2_wrapper::ObjectsStamped>("zed2/objects", 1);
 
+    ros::Publisher img_with_id_pub = nh.advertise<mask_kpts_msgs::ImageWithID>("zed2/left/rgb/image_with_id", 1);
+
     ros::Publisher mask_group_pub = nh.advertise<mask_kpts_msgs::MaskGroup>("/mask_group_super_glued", 1);
     ros::Publisher depth_repub = nh.advertise<sensor_msgs::Image>("/camera/depth_repub", 1);
     ros::Publisher pose_repub = nh.advertise<geometry_msgs::PoseStamped>("/camera/pose_repub", 1);
+
+    ros::Subscriber semantic_seg_sub = nh.subscribe("zed2/left/rgb/image_mask_with_id", 1, semanticSegCallback);
 
     // Get ros parameters from the launch file
     bool enable_object_detection, enable_object_tracking, enable_object_segmentation;
@@ -86,7 +104,7 @@ int main(int argc, char **argv) {
 
     bool publish_rgb, publish_depth, publish_point_cloud, publish_point_cloud_global, publish_objects;
 
-    bool synchoronize_pose_depth_mask;
+    bool synchoronize_pose_depth_mask, external_semantic_seg_on;
 
     ros::NodeHandle nh2("~");
     nh2.param<bool>("enable_object_detection", enable_object_detection, true);
@@ -108,6 +126,7 @@ int main(int argc, char **argv) {
     nh2.param<bool>("publish_point_cloud_global", publish_point_cloud_global, true);
 
     nh2.param<bool>("synchoronize_pose_depth_mask", synchoronize_pose_depth_mask, true);
+    nh2.param<bool>("external_semantic_seg_on", external_semantic_seg_on, true);
     
     std::cout << "detection_result_in_camera_frame: " << detection_result_in_camera_frame << std::endl;
 
@@ -123,7 +142,7 @@ int main(int argc, char **argv) {
     InitParameters init_parameters;
     init_parameters.depth_maximum_distance = 10.0f * 1000.0f;
     init_parameters.coordinate_units = UNIT::METER;
-    init_parameters.coordinate_system = COORDINATE_SYSTEM::RIGHT_HANDED_Y_UP; //COORDINATE_SYSTEM::IMAGE; // Check https://www.stereolabs.com/docs/positional-tracking/coordinate-frames for more information
+    init_parameters.coordinate_system = COORDINATE_SYSTEM::IMAGE; // Check https://www.stereolabs.com/docs/positional-tracking/coordinate-frames for more information
     init_parameters.sdk_verbose = 1;
 
     parseArgs(argc, argv, init_parameters);
@@ -220,6 +239,10 @@ int main(int argc, char **argv) {
 
     std::cout << "ZED2 node started" << std::endl;    
 
+    int image_id = 0;
+
+    ros::Rate loop_rate(500);
+
     // Main loop
     while ( ros::ok()) {
 
@@ -229,10 +252,12 @@ int main(int argc, char **argv) {
             ros::Time time = ros::Time::now();
             string frame_id = "zed2";
 
+            image_id++;
+            if(image_id > 1000000){image_id = 0;}
+
             // Publish Camera Pose
             zed.getPosition(cam_w_pose, REFERENCE_FRAME::WORLD);
 
-            
             geometry_msgs::PoseStamped pose_msg;
             pose_msg.header.stamp = time;
             pose_msg.header.frame_id = frame_id;
@@ -243,7 +268,6 @@ int main(int argc, char **argv) {
             pose_msg.pose.orientation.y = cam_w_pose.pose_data.getOrientation().y;
             pose_msg.pose.orientation.z = cam_w_pose.pose_data.getOrientation().z;
             pose_msg.pose.orientation.w = cam_w_pose.pose_data.getOrientation().w;
-
             pose_pub.publish(pose_msg);
             
 
@@ -261,6 +285,43 @@ int main(int argc, char **argv) {
             transformStamped.transform.rotation.z = cam_w_pose.pose_data.getOrientation().z;
             transformStamped.transform.rotation.w = cam_w_pose.pose_data.getOrientation().w;
             br.sendTransform(transformStamped);    
+
+            /** Publish rgb image***/
+            if(publish_rgb){
+                // Retrieve rgb image and publish
+                zed.retrieveImage(image_left, VIEW::LEFT);
+                cv::Mat cv_image_left = slMat2cvMat(image_left);
+
+                // Check image channels
+                if (cv_image_left.channels() == 4) {
+                    cv::cvtColor(cv_image_left, cv_image_left, cv::COLOR_BGRA2BGR);
+                }
+
+                sensor_msgs::Image img_msg;
+                img_msg.header.stamp = time;
+                img_msg.header.frame_id = frame_id;
+                img_msg.height = cv_image_left.rows;
+                img_msg.width = cv_image_left.cols;
+                img_msg.encoding = "bgr8";
+                img_msg.is_bigendian = 0;
+                img_msg.step = cv_image_left.cols * cv_image_left.elemSize();
+                size_t size = cv_image_left.cols * cv_image_left.rows * cv_image_left.elemSize();
+                img_msg.data.resize(size);
+                memcpy(&img_msg.data[0], cv_image_left.data, size);
+                img_pub.publish(img_msg); 
+
+                rgb_camera_info_pub.publish(rgb_camera_info);
+
+
+                // Publish image with ID
+                if(external_semantic_seg_on){
+                    mask_kpts_msgs::ImageWithID img_with_id_msg;
+                    img_with_id_msg.image = img_msg;
+                    img_with_id_msg.id = image_id;
+                    img_with_id_pub.publish(img_with_id_msg);
+                }
+
+            }
 
             /********  Publish Objects if detection is enabled  ******/ 
             simple_zed2_wrapper::ObjectsStamped objects_msg;
@@ -306,37 +367,14 @@ int main(int argc, char **argv) {
                 objects_pub.publish(objects_msg);
             }        
 
-            /********  Publish images  ********/
-            if(publish_rgb){
-                // Retrieve rgb image and publish
-                zed.retrieveImage(image_left, VIEW::LEFT);
-                cv::Mat cv_image_left = slMat2cvMat(image_left);
-
-                // Check image channels
-                if (cv_image_left.channels() == 4) {
-                    cv::cvtColor(cv_image_left, cv_image_left, cv::COLOR_BGRA2BGR);
-                }
-
-                sensor_msgs::Image img_msg;
-                img_msg.header.stamp = time;
-                img_msg.header.frame_id = frame_id;
-                img_msg.height = cv_image_left.rows;
-                img_msg.width = cv_image_left.cols;
-                img_msg.encoding = "bgr8";
-                img_msg.is_bigendian = 0;
-                img_msg.step = cv_image_left.cols * cv_image_left.elemSize();
-                size_t size = cv_image_left.cols * cv_image_left.rows * cv_image_left.elemSize();
-                img_msg.data.resize(size);
-                memcpy(&img_msg.data[0], cv_image_left.data, size);
-                img_pub.publish(img_msg); 
-
-                rgb_camera_info_pub.publish(rgb_camera_info);
-            }
-        
+            /********  Publish depth images  ********/
             if(publish_depth){
                 // Retrieve depth image and publish
                 zed.retrieveMeasure(depth_image, MEASURE::DEPTH);
                 cv::Mat cv_depth_image = slMat2cvMat(depth_image);
+
+                cv::imshow("Depth Image", cv_depth_image);
+                cv::waitKey(1);
 
                 sensor_msgs::Image depth_img_msg;
                 depth_img_msg.header.stamp = time;
@@ -355,11 +393,39 @@ int main(int argc, char **argv) {
                     mask_kpts_msgs::MaskGroup mask_group_msg;
                     setMaskKptsMsg(mask_group_msg, objects, skeletons, cv_depth_image.cols, cv_depth_image.rows);
 
+                    if(external_semantic_seg_on){
+                        // Wait for the semantic segmentation image.
+                        int timeout_counter = 0;
+                        bool timeout = false;
+                        while(semantic_seg_image_id != image_id){
+                            timeout_counter++;
+                            if(timeout_counter > 250){ //Wait for 0.5s at most
+                                timeout = true;
+                                break;
+                            }
+
+                            loop_rate.sleep();
+                            ros::spinOnce();
+                        }
+
+                        if(!timeout){
+                            // Add the semantic segmentation mask to the mask group
+                            mask_kpts_msgs::MaskKpts mask_kpts_msg;
+                            mask_kpts_msg.label = "static";
+                            mask_kpts_msg.track_id = 65535;
+                            mask_kpts_msg.mask = semantic_seg_image;
+                            mask_group_msg.objects.push_back(mask_kpts_msg);
+                        }else{
+                            ROS_WARN_THROTTLE(1, "Timeout waiting for semantic segmentation image");
+                        }
+                    }
+
                     mask_group_msg.header.stamp = time;
                     mask_group_msg.header.frame_id = frame_id;
 
                     mask_group_pub.publish(mask_group_msg);
                     depth_repub.publish(depth_img_msg);
+
                     pose_repub.publish(pose_msg);
                 }else{
                     depth_mat_pub.publish(depth_img_msg);
@@ -665,8 +731,8 @@ void setMaskKptsMsg(mask_kpts_msgs::MaskGroup &mask_group_msg, Objects &objects,
                     }
                 }
 
-                // cv::imshow("mask", mask);
-                // cv::waitKey(1);
+                cv::imshow("mask", mask);
+                cv::waitKey(1);
 
                 // Convert the mask to a ROS message
                 sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "mono8", mask).toImageMsg();
@@ -746,8 +812,8 @@ void setMaskKptsMsg(mask_kpts_msgs::MaskGroup &mask_group_msg, Objects &objects,
                     }
                 }
 
-                // cv::imshow("mask_human", mask);
-                // cv::waitKey(1);
+                cv::imshow("mask_human", mask);
+                cv::waitKey(1);
 
                 // Convert the mask to a ROS message
                 sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "mono8", mask).toImageMsg();
