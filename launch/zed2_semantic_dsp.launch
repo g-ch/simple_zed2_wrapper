@@ -19,8 +19,8 @@
     <arg name="publish_rgb" default="true"/>
     <arg name="publish_depth" default="true"/>
     <arg name="publish_objects" default="false"/>
-    <arg name="publish_point_cloud" default="true"/>
-    <arg name="publish_point_cloud_global" default="true"/>
+    <arg name="publish_point_cloud" default="false"/>
+    <arg name="publish_point_cloud_global" default="false"/>
 
     <arg name="synchoronize_pose_depth_mask" default="true"/>
     <arg name="external_semantic_seg_on" default="true"/>

@@ -35,7 +35,8 @@
 
 #include <cv_bridge/cv_bridge.h>
 #include <image_transport/image_transport.h>
-
+#include <visualization_msgs/Marker.h>
+#include <visualization_msgs/MarkerArray.h>
 
 #define BACKWARD_HAS_DW 1
 #include "backward.hpp"
@@ -53,7 +54,7 @@ void parseArgs(int argc, char **argv, InitParameters& param);
 void swapRedBlueChannels(sensor_msgs::PointCloud2& cloud);
 void setRegularObjectsMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Objects &objects);
 void setHumanBodyMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Bodies &skeletons, geometry_msgs::PoseStamped &camera_pose, bool detection_result_in_camera_frame);
-void setMaskKptsMsg(mask_kpts_msgs::MaskGroup &mask_group_msg, Objects &objects, Bodies &skeletons, int image_width, int image_height);
+void setMaskKptsMsg(mask_kpts_msgs::MaskGroup &mask_group_msg, visualization_msgs::MarkerArray &marker_msg,  Objects &objects, Bodies &skeletons, int image_width, int image_height);
 
 
 sensor_msgs::Image semantic_seg_image;
@@ -87,6 +88,7 @@ int main(int argc, char **argv) {
     ros::Publisher objects_pub = nh.advertise<simple_zed2_wrapper::ObjectsStamped>("zed2/objects", 1);
 
     ros::Publisher img_with_id_pub = nh.advertise<mask_kpts_msgs::ImageWithID>("zed2/left/rgb/image_with_id", 1);
+    ros::Publisher bboxes_pub = nh.advertise<visualization_msgs::MarkerArray>("zed2/bounding_boxes", 1);
 
     ros::Publisher mask_group_pub = nh.advertise<mask_kpts_msgs::MaskGroup>("/mask_group_super_glued", 1);
     ros::Publisher depth_repub = nh.advertise<sensor_msgs::Image>("/camera/depth_repub", 1);
@@ -373,8 +375,8 @@ int main(int argc, char **argv) {
                 zed.retrieveMeasure(depth_image, MEASURE::DEPTH);
                 cv::Mat cv_depth_image = slMat2cvMat(depth_image);
 
-                cv::imshow("Depth Image", cv_depth_image);
-                cv::waitKey(1);
+                // cv::imshow("Depth Image", cv_depth_image);
+                // cv::waitKey(1);
 
                 sensor_msgs::Image depth_img_msg;
                 depth_img_msg.header.stamp = time;
@@ -391,7 +393,9 @@ int main(int argc, char **argv) {
                 if(synchoronize_pose_depth_mask){
                     // Get mask group message
                     mask_kpts_msgs::MaskGroup mask_group_msg;
-                    setMaskKptsMsg(mask_group_msg, objects, skeletons, cv_depth_image.cols, cv_depth_image.rows);
+                    visualization_msgs::MarkerArray bboxes_msg;
+
+                    setMaskKptsMsg(mask_group_msg, bboxes_msg, objects, skeletons, cv_depth_image.cols, cv_depth_image.rows);
 
                     if(external_semantic_seg_on){
                         // Wait for the semantic segmentation image.
@@ -427,6 +431,8 @@ int main(int argc, char **argv) {
                     depth_repub.publish(depth_img_msg);
 
                     pose_repub.publish(pose_msg);
+
+                    bboxes_pub.publish(bboxes_msg);
                 }else{
                     depth_mat_pub.publish(depth_img_msg);
                 }
@@ -692,11 +698,59 @@ void setRegularObjectsMsg(simple_zed2_wrapper::ObjectsStamped &objects_msg, Obje
 }
 
 
+/// @brief Set the visual representation of the 3D bounding box using the results from object detection
+/// @param msg 
+/// @param object_3Dbbox 
+/// @param id 
+void setMarkerMsgfor3DBBox(visualization_msgs::Marker &msg, vector<sl::float3> &object_3Dbbox, int id)
+{
+    msg.header.frame_id = "zed2";
+    msg.header.stamp = ros::Time::now();
+    msg.ns = "bounding_boxes";
+    msg.id = id;
+    msg.type = visualization_msgs::Marker::LINE_LIST;
+    msg.action = visualization_msgs::Marker::ADD;
+    msg.pose.orientation.w = 1.0;
+    msg.scale.x = 0.05;
+    msg.color.r = 0.0;
+    msg.color.g = 1.0;
+    msg.color.b = 0.0;
+    msg.color.a = 1.0;
+
+    geometry_msgs::Point p0, p1, p2, p3, p4, p5, p6, p7;
+    p0.x = object_3Dbbox[0].x; p0.y = object_3Dbbox[0].y; p0.z = object_3Dbbox[0].z;
+    p1.x = object_3Dbbox[1].x; p1.y = object_3Dbbox[1].y; p1.z = object_3Dbbox[1].z;
+    p2.x = object_3Dbbox[2].x; p2.y = object_3Dbbox[2].y; p2.z = object_3Dbbox[2].z;
+    p3.x = object_3Dbbox[3].x; p3.y = object_3Dbbox[3].y; p3.z = object_3Dbbox[3].z;
+    p4.x = object_3Dbbox[4].x; p4.y = object_3Dbbox[4].y; p4.z = object_3Dbbox[4].z;
+    p5.x = object_3Dbbox[5].x; p5.y = object_3Dbbox[5].y; p5.z = object_3Dbbox[5].z;
+    p6.x = object_3Dbbox[6].x; p6.y = object_3Dbbox[6].y; p6.z = object_3Dbbox[6].z;
+    p7.x = object_3Dbbox[7].x; p7.y = object_3Dbbox[7].y; p7.z = object_3Dbbox[7].z;
+
+    msg.points.push_back(p0); msg.points.push_back(p1);
+    msg.points.push_back(p1); msg.points.push_back(p2);
+    msg.points.push_back(p2); msg.points.push_back(p3);
+    msg.points.push_back(p3); msg.points.push_back(p0);
+
+    msg.points.push_back(p4); msg.points.push_back(p5);
+    msg.points.push_back(p5); msg.points.push_back(p6);
+    msg.points.push_back(p6); msg.points.push_back(p7);
+    msg.points.push_back(p7); msg.points.push_back(p4);
+
+    msg.points.push_back(p0); msg.points.push_back(p4);
+    msg.points.push_back(p1); msg.points.push_back(p5);
+    msg.points.push_back(p2); msg.points.push_back(p6);
+    msg.points.push_back(p3); msg.points.push_back(p7);
+
+}
+
+
 /// @brief Set the mask and keypoints message using the results from object detection. Keypoints are in global frame and are generated with bbox_3d.
 /// @param mask_group_msg 
+/// @param marker_msg
 /// @param objects 
 /// @param skeletons 
-void setMaskKptsMsg(mask_kpts_msgs::MaskGroup &mask_group_msg, Objects &objects, Bodies &skeletons, int image_width, int image_height)
+void setMaskKptsMsg(mask_kpts_msgs::MaskGroup &mask_group_msg, visualization_msgs::MarkerArray &marker_msg,  Objects &objects, Bodies &skeletons, int image_width, int image_height)
 {
     int num_objects = 0, num_persons = 0;
 
@@ -731,8 +785,8 @@ void setMaskKptsMsg(mask_kpts_msgs::MaskGroup &mask_group_msg, Objects &objects,
                     }
                 }
 
-                cv::imshow("mask", mask);
-                cv::waitKey(1);
+                // cv::imshow("mask", mask);
+                // cv::waitKey(1);
 
                 // Convert the mask to a ROS message
                 sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "mono8", mask).toImageMsg();
@@ -775,6 +829,12 @@ void setMaskKptsMsg(mask_kpts_msgs::MaskGroup &mask_group_msg, Objects &objects,
                     mask_kpts.bbox_br.y = object_2Dbbox[2].y;
 
                     mask_group_msg.objects.push_back(mask_kpts);
+
+                    // Set the marker message for the 3D bounding box
+                    visualization_msgs::Marker marker;
+                    setMarkerMsgfor3DBBox(marker, object_3Dbbox, track_id);
+
+                    marker_msg.markers.push_back(marker);
                 }
             }
         }
@@ -856,6 +916,12 @@ void setMaskKptsMsg(mask_kpts_msgs::MaskGroup &mask_group_msg, Objects &objects,
                     mask_kpts.bbox_br.y = object_2Dbbox[2].y;
 
                     mask_group_msg.objects.push_back(mask_kpts);
+
+                    // Set the marker message for the 3D bounding box
+                    visualization_msgs::Marker marker;
+                    setMarkerMsgfor3DBBox(marker, object_3Dbbox, track_id);
+
+                    marker_msg.markers.push_back(marker);
                 }
             }
         }
