@@ -7,8 +7,6 @@ We use the ros_msg defined in ZED ROS2 wrapper. The msg is included in this wrap
 
 - Tested environment. Ubuntu 20.04 + ROS Noetic.
 
-## TODO
-~~Write a node that transform everything to the global coordinate system in the Vicon field.~~
 
 ## Installation
 ### Install ZED SDK
