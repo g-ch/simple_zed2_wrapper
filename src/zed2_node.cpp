@@ -375,7 +375,7 @@ int main(int argc, char **argv) {
                 zed.retrieveMeasure(depth_image, MEASURE::DEPTH);
                 cv::Mat cv_depth_image = slMat2cvMat(depth_image);
 
-                // cv::imshow("Depth Image", cv_depth_image);
+                // cv::("Depth Image", cv_depth_image);
                 // cv::waitKey(1);
 
                 sensor_msgs::Image depth_img_msg;
@@ -785,7 +785,7 @@ void setMaskKptsMsg(mask_kpts_msgs::MaskGroup &mask_group_msg, visualization_msg
                     }
                 }
 
-                // cv::imshow("mask", mask);
+                // cv::("mask", mask);
                 // cv::waitKey(1);
 
                 // Convert the mask to a ROS message
@@ -872,8 +872,8 @@ void setMaskKptsMsg(mask_kpts_msgs::MaskGroup &mask_group_msg, visualization_msg
                     }
                 }
 
-                cv::imshow("mask_human", mask);
-                cv::waitKey(1);
+                // cv::imshow("mask_human", mask);
+                // cv::waitKey(1);
 
                 // Convert the mask to a ROS message
                 sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "mono8", mask).toImageMsg();
