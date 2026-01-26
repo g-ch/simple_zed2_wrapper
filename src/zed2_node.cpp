@@ -94,8 +94,6 @@ int main(int argc, char **argv) {
     ros::Publisher depth_repub = nh.advertise<sensor_msgs::Image>("/camera/depth_repub", 1);
     ros::Publisher pose_repub = nh.advertise<geometry_msgs::PoseStamped>("/camera/pose_repub", 1);
 
-    ros::Subscriber semantic_seg_sub = nh.subscribe("zed2/left/rgb/image_mask_with_id", 1, semanticSegCallback);
-
     // Get ros parameters from the launch file
     bool enable_object_detection, enable_object_tracking, enable_object_segmentation;
     bool enable_body_tracking, enable_body_segmentation;
@@ -129,6 +127,12 @@ int main(int argc, char **argv) {
 
     nh2.param<bool>("synchoronize_pose_depth_mask", synchoronize_pose_depth_mask, true);
     nh2.param<bool>("external_semantic_seg_on", external_semantic_seg_on, true);
+    
+    // Only subscribe to semantic segmentation if external semantic seg is enabled
+    ros::Subscriber semantic_seg_sub;
+    if(external_semantic_seg_on) {
+        semantic_seg_sub = nh.subscribe("zed2/left/rgb/image_mask_with_id", 1, semanticSegCallback);
+    }
     
     std::cout << "detection_result_in_camera_frame: " << detection_result_in_camera_frame << std::endl;
 

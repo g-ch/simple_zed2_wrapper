@@ -16,5 +16,6 @@
         "iostream": "cpp",
         "dense": "cpp",
         "iosfwd": "cpp"
-    }
+    },
+    "ros.distro": "noetic"
 }

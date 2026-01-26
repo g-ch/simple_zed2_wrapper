@@ -4,10 +4,10 @@
     <arg name="frame_rate" default="30"/> <!-- 30, 60 -->
     <arg name="depth_mode" default="ULTRA"/> <!-- PERFORMANCE, QUALITY, ULTRA, NEURAL -->
     
-    <arg name="enable_object_detection" default="true"/>
-    <arg name="enable_object_tracking" default="true"/>
+    <arg name="enable_object_detection" default="false"/>
+    <arg name="enable_object_tracking" default="false"/>
     <arg name="enable_object_segmentation" default="false"/>
-    <arg name="enable_body_tracking" default="true"/>
+    <arg name="enable_body_tracking" default="false"/>
     <arg name="enable_body_segmentation" default="false"/>
 
     <arg name="detection_result_in_camera_frame" default="false"/>
@@ -17,8 +17,8 @@
     <arg name="depth_confidence" default="50"/> <!-- 0-100 -->
 
     <arg name="publish_rgb" default="true"/>
-    <arg name="publish_depth" default="false"/>
-    <arg name="publish_point_cloud" default="true"/>
+    <arg name="publish_depth" default="true"/>
+    <arg name="publish_point_cloud" default="false"/>
     <arg name="publish_point_cloud_global" default="true"/>
 
     <node pkg="simple_zed2_wrapper" type="zed2_node" name="zed2_node" args="-$(arg image_quality) -FPS$(arg frame_rate) -$(arg depth_mode)" output="screen">
