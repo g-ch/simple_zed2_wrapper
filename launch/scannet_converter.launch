@@ -1,0 +1,16 @@
+<launch>
+    <!-- ScanNet Converter Node -->
+    <!-- This node subscribes to ZED2 topics and saves data in ScanNet format -->
+    
+    <arg name="output_dir" default="$(find simple_zed2_wrapper)/scannet_data"/>
+    <arg name="time_tolerance" default="0.1"/>
+    <arg name="save_frequency" default="10.0"/>
+    
+    <node pkg="simple_zed2_wrapper" type="scannet_converter" name="scannet_converter" output="screen">
+        <param name="~output_dir" type="string" value="$(arg output_dir)"/>
+        <param name="~time_tolerance" type="double" value="$(arg time_tolerance)"/>
+        <param name="~save_frequency" type="double" value="$(arg save_frequency)"/>
+    </node>
+    
+</launch>
+

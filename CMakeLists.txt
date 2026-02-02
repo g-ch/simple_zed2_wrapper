@@ -122,3 +122,9 @@ ADD_EXECUTABLE(global_human_pose src/global_human_pose.cpp)
 add_dependencies(global_human_pose ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(global_human_pose
                         ${catkin_LIBRARIES})
+
+ADD_EXECUTABLE(scannet_converter src/scannet_converter.cpp)
+add_dependencies(scannet_converter ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(scannet_converter
+                        ${OpenCV_LIBRARIES}
+                        ${catkin_LIBRARIES})

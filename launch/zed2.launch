@@ -19,7 +19,8 @@
     <arg name="publish_rgb" default="true"/>
     <arg name="publish_depth" default="true"/>
     <arg name="publish_point_cloud" default="false"/>
-    <arg name="publish_point_cloud_global" default="true"/>
+    <arg name="publish_point_cloud_global" default="false"/>
+    <arg name="synchoronize_pose_depth_mask" default="false"/>
 
     <node pkg="simple_zed2_wrapper" type="zed2_node" name="zed2_node" args="-$(arg image_quality) -FPS$(arg frame_rate) -$(arg depth_mode)" output="screen">
         <param name="~enable_object_detection" type="bool" value="$(arg enable_object_detection)"/>
@@ -27,6 +28,7 @@
         <param name="~enable_body_segmentation" type="bool" value="$(arg enable_body_segmentation)"/>
         <param name="~enable_object_tracking" type="bool" value="$(arg enable_object_tracking)"/>
         <param name="~enable_object_segmentation" type="bool" value="$(arg enable_object_segmentation)"/>
+        <param name="~synchoronize_pose_depth_mask" type="bool" value="$(arg synchoronize_pose_depth_mask)"/>
 
         <param name="~detection_result_in_camera_frame" type="bool" value="$(arg detection_result_in_camera_frame)"/>
 
